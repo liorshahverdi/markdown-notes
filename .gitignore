@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+
+# Local AI/editor metadata
+.claude/
+.vscode/
+**/.claude/
+**/.vscode/
+
+# Dependency and build artifacts
+**/node_modules/
+**/.svelte-kit/
+**/.vite/
+**/.vite-temp/
+**/build/
+**/dist/
+**/.output/
+**/.vercel/
+**/.netlify/
+**/.wrangler/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Local dev TLS certs
+*.pem
+
+# Local runtime data
+**/*.db
+**/*.db-shm
+**/*.db-wal
+web/data/
+
+# Keep unrelated sibling app out of this repo
+MarkdownNotes/
