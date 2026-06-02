@@ -3,49 +3,30 @@
 	import { onMount } from 'svelte';
 	import { v4 as uuidv4 } from 'uuid';
 	import { ragConfig } from '$lib/stores/rag';
-	import { notes, selectedNote, selectedNoteId } from '$lib/stores/notes';
-	import { selectedFolderId } from '$lib/stores/folders';
-	import { buildRAGMessages, extractRelevantExcerpt, type ChatHistoryEntry } from '$lib/vector/ragPipeline';
-	import { proxyQueryOllama, proxyCheckHealth } from '$lib/llm/ollamaProxy';
-	import { TraceLogger } from '$lib/graph/traceLogger';
-	import { searchNotes, vectorStoreReady } from '$lib/vector/vectorStoreManager';
-	import { getGraphBoosts, applyGraphBoosts, getGraphContext } from '$lib/graph/graphRetriever';
-	import { rerankResults } from '$lib/vector/reranker';
+	import { selectedNoteId } from '$lib/stores/notes';
+	import { proxyCheckHealth } from '$lib/llm/ollamaProxy';
 	import { createSpeechRecognition } from '$lib/voice/speechRecognition';
 	import { speak, stopSpeaking, isSpeaking } from '$lib/voice/speechSynthesis';
 	import { loadVoicePreferences } from '$lib/voice/voicePreferences';
 	import { db, type ChatMessageRecord } from '$lib/db/index';
 	import AssistantAvatar from './AssistantAvatar.svelte';
-
-	/**
-	 * Score a note's relevance to a query using keyword overlap.
-	 * Returns a 0–1 score based on the fraction of query terms found in the note.
-	 */
-	function scoreNote(query: string, title: string, content: string): number {
-		const queryTerms = query
-			.toLowerCase()
-			.split(/\s+/)
-			.filter((t) => t.length > 2); // skip tiny words
-		if (queryTerms.length === 0) return 0;
-
-		const text = `${title} ${content}`.toLowerCase();
-		let matches = 0;
-		for (const term of queryTerms) {
-			if (text.includes(term)) matches++;
-		}
-		return matches / queryTerms.length;
-	}
+	import FileAnswerPanel from './FileAnswerPanel.svelte';
 
 	interface Source {
+		id?: string;
 		noteId: string;
 		title: string;
 		relevanceScore: number;
+		kind?: 'wiki-page' | 'raw-source' | 'note';
+		wikiPath?: string;
 	}
 
 	interface Message {
 		role: 'user' | 'assistant';
 		text: string;
 		sources?: Source[];
+		coverage?: 'strong' | 'weak';
+		usedRawFallback?: boolean;
 	}
 
 	let { onSourceClick = (_noteId: string) => {} }: { onSourceClick?: (noteId: string) => void } =
@@ -79,6 +60,8 @@
 				role: r.role,
 				text: r.content,
 				sources: r.sources,
+				coverage: (r as ChatMessageRecord & { coverage?: 'strong' | 'weak' }).coverage,
+				usedRawFallback: (r as ChatMessageRecord & { usedRawFallback?: boolean }).usedRawFallback,
 			}));
 		} catch {
 			messages = [];
@@ -152,6 +135,25 @@
 		}
 	}
 
+	function previousUserQuestion(index: number): string {
+		for (let i = index - 1; i >= 0; i--) {
+			if (messages[i]?.role === 'user') return messages[i].text;
+		}
+		return '';
+	}
+
+	function wikiCitations(sources: Source[] | undefined) {
+		return (sources ?? [])
+			.filter((source) => source.kind === 'wiki-page' || source.kind === 'raw-source')
+			.map((source) => ({
+				id: source.id ?? source.noteId,
+				title: source.title,
+				kind: source.kind as 'wiki-page' | 'raw-source',
+				wikiPath: source.wikiPath ?? source.noteId,
+				relevanceScore: source.relevanceScore,
+			}));
+	}
+
 	async function handleSubmit() {
 		const query = inputText.trim();
 		if (!query || isLoading) return;
@@ -165,8 +167,6 @@
 		scrollToBottom();
 
 		const config = get(ragConfig);
-		const tracer = new TraceLogger('query');
-
 		// Check Ollama health
 		const healthy = await proxyCheckHealth(config.ollamaUrl);
 		if (!healthy) {
@@ -175,246 +175,52 @@
 			return;
 		}
 
-		// Find relevant notes — semantic search if ready, keyword fallback otherwise
-		const topK = config.topK || 5;
-		let contextNotes: Array<{ title: string; content: string }>;
-		let sources: Source[];
-		let graphContextStr = '';
-
-		if (get(vectorStoreReady)) {
-			const currentFolderId = get(selectedFolderId);
-			tracer.beginStage('vector_search', { query, topK });
-			const semanticResults = await searchNotes(query, topK, currentFolderId);
-			for (const r of semanticResults) {
-				tracer.addDecision({ action: 'accepted', subject: r.title, reason: `Semantic similarity score ${(r.score * 100).toFixed(0)}%${currentFolderId ? ' (filtered to current folder)' : ''}`, confidence: r.score });
-			}
-			if (semanticResults.length === 0) {
-				tracer.addDecision({ action: 'rejected', subject: 'All notes', reason: `No notes matched query "${query.slice(0, 50)}" above similarity threshold${currentFolderId ? ' in current folder' : ''}` });
-			}
-			tracer.endStage({ resultCount: semanticResults.length });
-
-			// Apply knowledge graph boosts to expand and re-rank results
-			tracer.beginStage('graph_boost', { vectorResultCount: semanticResults.length });
-			const vectorNoteIds = semanticResults.map((r) => r.noteId);
-			const graphBoosts = await getGraphBoosts(query, vectorNoteIds, currentFolderId);
-			const graphBoosted = applyGraphBoosts(semanticResults, graphBoosts);
-			for (const boost of graphBoosts) {
-				tracer.addDecision({ action: 'accepted', subject: boost.noteId, reason: `Knowledge graph boost: connected to search results via entity relationships (boost ${(boost.boost * 100).toFixed(0)}%)`, confidence: boost.boost });
-			}
-			tracer.endStage({ boostCount: graphBoosts.length, boostedResultCount: graphBoosted.length });
-
-			// Extract knowledge graph context for the prompt
-			graphContextStr = await getGraphContext(query, graphBoosted.map((r) => r.noteId));
-
-			// Cross-encoder reranking for precision (falls back gracefully if unavailable)
-			tracer.beginStage('rerank', { inputCount: graphBoosted.length });
-			const boostedResults = await rerankResults(query, graphBoosted);
-			tracer.endStage({ outputCount: boostedResults.length });
-
-			// Vector search returns chunks, but we want the full note content
-			// so the model has complete context. Look up each note by ID.
-			const allNotes = get(notes);
-			const noteById = new Map(allNotes.map((n) => [n.id, n]));
-
-			// Score each result by title match to query terms
-			const queryWords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
-			const scored = boostedResults.map((r) => {
-				const titleLower = r.title.toLowerCase();
-				const titleHits = queryWords.filter((w) => titleLower.includes(w)).length;
-				return { ...r, titleHits };
-			});
-			scored.sort((a, b) => b.titleHits - a.titleHits || b.score - a.score);
-
-			// If the top result's title matches the query significantly better
-			// than the rest, focus on just that note (gives the model more context
-			// and avoids confusion from unrelated notes).
-			tracer.beginStage('note_selection', { candidateCount: scored.length });
-			const best = scored[0];
-			let focused: typeof scored;
-			if (best && best.titleHits > 0 && scored.every((s, i) => i === 0 || s.titleHits < best.titleHits)) {
-				focused = [best];
-				tracer.addDecision({ action: 'accepted', subject: best.title, reason: `Title matches ${best.titleHits}/${queryWords.length} query terms — significantly better than other results, focusing on this note only`, confidence: best.score });
-				for (const s of scored.slice(1)) {
-					tracer.addDecision({ action: 'rejected', subject: s.title, reason: `Only ${s.titleHits}/${queryWords.length} title term matches vs ${best.titleHits} for top result — excluded to avoid diluting context` });
-				}
-			} else {
-				focused = scored;
-				for (const s of scored) {
-					tracer.addDecision({ action: 'accepted', subject: s.title, reason: `${s.titleHits}/${queryWords.length} title term matches, similarity ${(s.score * 100).toFixed(0)}% — included in context`, confidence: s.score });
-				}
-			}
-
-			const CONTEXT_BUDGET = 10000;
-			const perNote = Math.floor(CONTEXT_BUDGET / Math.max(focused.length, 1));
-
-			contextNotes = focused.map((r) => {
-				const fullNote = noteById.get(r.noteId);
-				let content = fullNote ? fullNote.content : r.chunkText;
-				if (content.length > perNote) {
-					content = extractRelevantExcerpt(content, query, perNote);
-				}
-				return { title: r.title, content };
-			});
-			sources = focused.map((r) => ({
-				noteId: r.noteId,
-				title: r.title,
-				relevanceScore: r.score,
-			}));
-			tracer.endStage({ selectedCount: focused.length, contextBudget: CONTEXT_BUDGET });
-		} else {
-			// Keyword fallback while embeddings model loads
-			tracer.beginStage('keyword_fallback', { query, reason: 'Vector store not ready — using keyword matching' });
-			const allNotes = get(notes);
-			const scored = allNotes
-				.map((n) => ({ note: n, score: scoreNote(query, n.title, n.content) }))
-				.filter((s) => s.score > 0)
-				.sort((a, b) => b.score - a.score)
-				.slice(0, topK);
-
-			for (const s of scored) {
-				tracer.addDecision({ action: 'accepted', subject: s.note.title, reason: `Keyword overlap ${(s.score * 100).toFixed(0)}% of query terms found in title+content`, confidence: s.score });
-			}
-			if (scored.length === 0) {
-				tracer.addDecision({ action: 'rejected', subject: 'All notes', reason: 'No notes contain any query keywords' });
-			}
-
-			contextNotes = scored.map((s) => ({
-				title: s.note.title,
-				content: s.note.content.length > 2000
-					? extractRelevantExcerpt(s.note.content, query, 2000)
-					: s.note.content,
-			}));
-			sources = scored.map((s) => ({
-				noteId: s.note.id,
-				title: s.note.title,
-				relevanceScore: s.score,
-			}));
-			tracer.endStage({ resultCount: scored.length });
-		}
-
-		// Title-match injection: if a note's title is substantially contained
-		// in the query (or vice versa), make sure it's in the results even if
-		// vector search missed it (e.g. note not yet indexed, or embedding
-		// similarity was low despite an exact title match).
-		// When found, use ONLY that note so the LLM focuses on the right content.
-		tracer.beginStage('title_match', { query });
-		const allNotesForTitleMatch = get(notes);
-		const queryLower = query.toLowerCase();
-		const strippedQuery = queryLower.replace(/^(summarize|summarise|explain|describe|recap|review|tell me about|what is|what are|who is|what did|what was)\s+(the\s+)?(discussion\s+)?(in\s+)?/i, '').trim();
-		let titleMatchNote: (typeof allNotesForTitleMatch)[0] | null = null;
-		for (const note of allNotesForTitleMatch) {
-			const titleLower = note.title.toLowerCase();
-			if (titleLower.length < 4) continue;
-			if (queryLower.includes(titleLower) || titleLower.includes(strippedQuery)) {
-				titleMatchNote = note;
-				break;
-			}
-		}
-		if (titleMatchNote) {
-			const MAX_INJECTED_CHARS = 10000;
-			const content = titleMatchNote.content.length > MAX_INJECTED_CHARS
-				? extractRelevantExcerpt(titleMatchNote.content, query, MAX_INJECTED_CHARS)
-				: titleMatchNote.content;
-			tracer.addDecision({ action: 'accepted', subject: titleMatchNote.title, reason: `Query references this note by title — overriding search results to focus on this note (${titleMatchNote.content.length} chars)` });
-			contextNotes = [{ title: titleMatchNote.title, content }];
-			sources = [{ noteId: titleMatchNote.id, title: titleMatchNote.title, relevanceScore: 1 }];
-		} else {
-			tracer.addDecision({ action: 'rejected', subject: 'Title match', reason: 'No note title found in query text — using search results as-is' });
-		}
-		tracer.endStage({ matched: !!titleMatchNote });
-
-		// If the query explicitly refers to "this note" or "current note",
-		// ensure the selected note is included in context (but don't override search results).
-		const current = get(selectedNote);
-		const implicitReference = /\b(this note|current note)\b/i.test(query);
-
-		if (current && implicitReference) {
-			const alreadyIncluded = sources.some((s) => s.noteId === current.id);
-			if (!alreadyIncluded) {
-				const MAX_SELECTED_CHARS = 6000;
-				const content = current.content.length > MAX_SELECTED_CHARS
-					? extractRelevantExcerpt(current.content, query, MAX_SELECTED_CHARS)
-					: current.content;
-				tracer.beginStage('implicit_reference', {});
-				tracer.addDecision({ action: 'accepted', subject: current.title, reason: `Query references "this note" — adding selected note to context` });
-				tracer.endStage({});
-				contextNotes.unshift({ title: current.title, content });
-				sources.unshift({ noteId: current.id, title: current.title, relevanceScore: 1 });
-			}
-		}
-
-		// Add empty assistant message for streaming
-		messages = [...messages, { role: 'assistant' as const, text: '', sources }];
-		const assistantIdx = messages.length - 1;
-
 		try {
-			tracer.beginStage('llm_generation', { sourceCount: sources.length, model: config.model });
-			// Total timeout: auto-cancel after 120s so the UI never hangs indefinitely.
+			// The primary chat path now goes through the server query pipeline so normal UX
+			// uses wiki-first retrieval, wiki/raw citations, coverage state, and answer filing.
 			const timeoutSignal = AbortSignal.timeout(120_000);
 			abortController = new AbortController();
 			const combinedSignal = AbortSignal.any([abortController.signal, timeoutSignal]);
-
-			// Build chat history for multi-turn context (last 3 exchanges, excluding current)
-			const priorMessages = messages.slice(0, -1); // exclude the empty assistant msg we just added
-			// Drop the immediately preceding exchange if the user is retrying the
-			// same question — the previous (wrong) answer would poison the model.
-			let historyMessages = priorMessages.filter((m) => m.text);
-			if (historyMessages.length >= 2) {
-				const lastUserIdx = historyMessages.findLastIndex((m) => m.role === 'user');
-				if (lastUserIdx >= 1) {
-					const prevUserMsg = historyMessages[lastUserIdx - (historyMessages[lastUserIdx - 1]?.role === 'assistant' ? 2 : 1)];
-					if (prevUserMsg && prevUserMsg.role === 'user' && prevUserMsg.text.trim().toLowerCase() === query.trim().toLowerCase()) {
-						// Same question asked again — drop the failed Q&A pair
-						historyMessages = historyMessages.slice(0, lastUserIdx - (historyMessages[lastUserIdx - 1]?.role === 'assistant' ? 2 : 1));
-					}
-				}
+			const response = await fetch('/api/query', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query, model: config.model, ollamaUrl: config.ollamaUrl }),
+				signal: combinedSignal,
+			});
+			if (!response.ok) {
+				const message = await response.text();
+				throw new Error(message || `Query failed with ${response.status}`);
 			}
-			const chatHistory: ChatHistoryEntry[] = historyMessages
-				.slice(-6) // last 3 Q&A pairs
-				.map((m) => ({ role: m.role, text: m.text }));
-
-			// Collect note summaries for broader context
-			const allNotesForSummaries = get(notes);
-			const summaryNoteMap = new Map(allNotesForSummaries.map((n) => [n.title, n.summary]));
-			const noteSummaries = sources
-				.map((s) => {
-					const summary = summaryNoteMap.get(s.title);
-					return summary ? { title: s.title, summary } : null;
-				})
-				.filter((s): s is { title: string; summary: string } => s !== null);
-
-			const messages_to_send = buildRAGMessages(query, contextNotes, chatHistory, graphContextStr, noteSummaries.length > 0 ? noteSummaries : undefined);
-			for await (const token of proxyQueryOllama(messages_to_send, config, combinedSignal)) {
-				// Mutate through the reactive $state array so Svelte 5 tracks the change
-				messages[assistantIdx].text += token;
-				scrollToBottom();
-			}
+			const result = await response.json() as {
+				response: string;
+				sources?: Source[];
+				citations?: Source[];
+				coverage?: 'strong' | 'weak';
+				usedRawFallback?: boolean;
+			};
+			const assistantMsg: Message = {
+				role: 'assistant',
+				text: result.response,
+				sources: result.citations ?? result.sources ?? [],
+				coverage: result.coverage,
+				usedRawFallback: result.usedRawFallback,
+			};
+			messages = [...messages, assistantMsg];
+			persistMessage(assistantMsg);
 		} catch (err) {
-			if (err instanceof DOMException && err.name === 'AbortError') {
-				// User stopped generation — keep partial response
-			} else {
-				let msg = err instanceof Error ? err.message : 'Failed to query Ollama';
+			if (!(err instanceof DOMException && err.name === 'AbortError')) {
+				let msg = err instanceof Error ? err.message : 'Failed to query wiki';
 				if (msg.includes('stalled') || msg.includes('TimeoutError') || msg.includes('timed out')) {
 					msg = 'Response timed out. Ollama may be overloaded or the model is too slow for this query.';
 				}
 				error = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
-				// Remove the empty assistant message on error
-				if (messages[assistantIdx].text === '') {
-					messages = messages.slice(0, -1);
-				}
 			}
 		} finally {
-			tracer.endStage({ responseLength: messages[assistantIdx]?.text?.length ?? 0 });
-			tracer.finalize(`Query: "${query.slice(0, 50)}" — ${sources.length} sources`).catch(() => {});
 			abortController = null;
 			isLoading = false;
 			scrollToBottom();
-			// Persist assistant response
-			const assistantMsg = messages[assistantIdx];
-			if (assistantMsg && assistantMsg.text) {
-				persistMessage(assistantMsg);
-			}
 		}
+		return;
 	}
 
 	function handleStop() {
@@ -544,6 +350,13 @@
 							{/if}
 						</div>
 
+						<!-- Wiki coverage state -->
+						{#if msg.coverage}
+							<div class="mt-1 text-xs text-gray-500 dark:text-gray-400" data-testid="wiki-coverage-state">
+								Wiki coverage: {msg.coverage}{msg.usedRawFallback ? ' · raw-source fallback used' : ''}
+							</div>
+						{/if}
+
 						<!-- Read aloud button -->
 						{#if msg.text && !isLoading}
 							<button
@@ -570,10 +383,23 @@
 										onclick={() => onSourceClick(source.noteId)}
 										title="Relevance: {(source.relevanceScore * 100).toFixed(0)}%"
 									>
+										{#if source.kind}
+											<span class="mr-1 opacity-70">{source.kind}</span>
+										{/if}
 										{source.title}
 									</button>
 								{/each}
 							</div>
+						{/if}
+
+						{#if msg.text && wikiCitations(msg.sources).length > 0}
+							<FileAnswerPanel
+								question={previousUserQuestion(messages.indexOf(msg))}
+								answer={msg.text}
+								citations={wikiCitations(msg.sources)}
+								coverage={msg.coverage ?? 'weak'}
+								usedRawFallback={msg.usedRawFallback ?? false}
+							/>
 						{/if}
 					</div>
 				</div>

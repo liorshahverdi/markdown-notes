@@ -29,7 +29,7 @@ describe('buildRAGPrompt', () => {
 
   it('should include instruction prefix', () => {
     const prompt = buildRAGPrompt('What is X?', [{ title: 'T', content: 'C' }]);
-    expect(prompt).toContain('User question: What is X?');
+    expect(prompt).toContain('User: Question: What is X?');
     expect(prompt).toContain('Relevant notes');
   });
 

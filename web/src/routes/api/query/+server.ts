@@ -1,12 +1,14 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { readNotes } from '$lib/server/notesFile';
+import { join } from 'node:path';
+import { getDb } from '$lib/server/database';
 import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
-import { buildRAGMessages, queryOllama, checkOllamaHealth } from '$lib/vector/ragPipeline';
-import { serverSemanticSearch } from '$lib/vector/serverEmbeddings';
+import { queryOllama, checkOllamaHealth } from '$lib/vector/ragPipeline';
+import { buildWikiFirstQueryContext } from '$lib/wiki/query/queryPipeline';
 
 const DEFAULT_TOP_K = 5;
 const DEFAULT_MODEL = 'llama3.2:3b';
+const DEFAULT_USER_ID = 'user-1';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
   const body = await request.json();
@@ -28,52 +30,37 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     throw error(503, 'Ollama is not reachable. Make sure it is running.');
   }
 
-  const allNotes = readNotes(locals.user!.id);
-  const { results, contextNotes } = await serverSemanticSearch(query, allNotes, DEFAULT_TOP_K);
-
-  const sources = results.map((result) => ({
-    noteId: result.noteId,
-    title: result.title,
-    relevanceScore: result.score,
-  }));
-
-  const contextWithScores = contextNotes.map((note, index) => ({
-    ...note,
-    relevanceScore: results[index]?.score ?? 1,
-  }));
-
-  const noteById = new Map(allNotes.map((note) => [note.id, note]));
-  const noteSummaries = results
-    .map((result) => {
-      const note = noteById.get(result.noteId);
-      return note?.summary ? { title: result.title, summary: note.summary } : null;
-    })
-    .filter((summary): summary is { title: string; summary: string } => summary !== null);
-
-  const messages = buildRAGMessages(
+  const queryContext = buildWikiFirstQueryContext({
+    db: getDb(),
+    userId: locals.user?.id ?? DEFAULT_USER_ID,
+    baseDir: join(process.cwd(), 'data'),
     query,
-    contextWithScores,
-    undefined,
-    undefined,
-    noteSummaries.length > 0 ? noteSummaries : undefined
-  );
+    topK: DEFAULT_TOP_K,
+  });
+
   const config = { ollamaUrl: resolvedOllamaUrl, model: model || DEFAULT_MODEL, topK: DEFAULT_TOP_K };
 
   try {
     let fullResponse = '';
-    for await (const token of queryOllama(messages, config)) {
+    for await (const token of queryOllama(queryContext.messages, config)) {
       fullResponse += token;
     }
 
     return json({
       response: fullResponse,
-      sources,
+      sources: queryContext.citations,
+      citations: queryContext.citations,
+      coverage: queryContext.coverage,
+      usedRawFallback: queryContext.usedRawFallback,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return json({
       response: `Error querying Ollama: ${message}`,
-      sources,
+      sources: queryContext.citations,
+      citations: queryContext.citations,
+      coverage: queryContext.coverage,
+      usedRawFallback: queryContext.usedRawFallback,
     });
   }
 };
