@@ -124,7 +124,7 @@ describe('StatusBar', () => {
 
 		// 4 words, 23 chars, 2 lines based on mock
 		expect(container.textContent).toContain('4 words');
-		expect(container.textContent).toContain('23 characters');
+		expect(container.textContent).toContain('23 chars');
 		expect(container.textContent).toContain('2 lines');
 	});
 
@@ -135,7 +135,7 @@ describe('StatusBar', () => {
 		const { container } = render(StatusBar, { props: { content: 'Hello' } });
 
 		expect(container.textContent).toContain('1 word');
-		expect(container.textContent).toContain('5 characters');
+		expect(container.textContent).toContain('5 chars');
 		expect(container.textContent).toContain('1 line');
 	});
 
@@ -151,7 +151,7 @@ describe('StatusBar', () => {
 		const { container } = render(StatusBar, { props: { content: '' } });
 
 		expect(container.textContent).toContain('0 words');
-		expect(container.textContent).toContain('0 characters');
+		expect(container.textContent).toContain('0 chars');
 		expect(container.textContent).toContain('0 lines');
 	});
 });
@@ -167,7 +167,8 @@ describe('EmptyState', () => {
 
 		const { container } = render(EmptyState);
 
-		expect(container.textContent).toContain('Select or create a note');
+		expect(container.textContent).toContain('A blank page awaits.');
+		expect(container.textContent).toContain('Select a note from your library');
 	});
 
 	it('renders a document icon', async () => {

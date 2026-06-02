@@ -24,6 +24,12 @@
 	import Preview from '$lib/components/Preview.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import SourcesPane from '$lib/components/SourcesPane.svelte';
+	import IngestReviewPanel from '$lib/components/IngestReviewPanel.svelte';
+	import WikiIndexView from '$lib/components/WikiIndexView.svelte';
+	import WikiLogView from '$lib/components/WikiLogView.svelte';
+	import LintFindingsPanel from '$lib/components/LintFindingsPanel.svelte';
+	import LegacyMigrationPanel from '$lib/components/LegacyMigrationPanel.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import { chatOpen } from '$lib/stores/chat';
 
@@ -304,11 +310,21 @@
 			</div>
 		</div>
 	{:else}
-		<div class="flex-1">
+		<div class="flex-1 overflow-auto">
 			{#if $chatOpen}
 				<ChatPanel onSourceClick={(id) => selectedNoteId.set(id)} />
 			{:else}
-				<EmptyState />
+				<div class="flex min-h-full flex-col items-center justify-center gap-6 px-6 py-8">
+					<EmptyState />
+					<div class="grid w-full max-w-6xl grid-cols-1 gap-4 xl:grid-cols-2">
+						<SourcesPane />
+						<IngestReviewPanel />
+						<WikiIndexView />
+						<WikiLogView />
+						<LintFindingsPanel />
+						<LegacyMigrationPanel />
+					</div>
+				</div>
 			{/if}
 		</div>
 	{/if}
