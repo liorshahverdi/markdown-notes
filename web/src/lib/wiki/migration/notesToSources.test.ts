@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { initializeDatabase } from '$lib/server/database';
 import type { NoteRecord } from '../../../types/note';
-import { adaptNoteToSourceImport, migrateNotesToSources } from './notesToSources';
+import { adaptNoteToSourceImport, migrateNotesToSources, syncNoteToSource } from './notesToSources';
 
 const tempDirs: string[] = [];
 const dbs: Database.Database[] = [];
@@ -57,6 +57,30 @@ describe('adaptNoteToSourceImport', () => {
       sourceDate: Date.UTC(2026, 0, 2),
       tags: ['legacy-note', 'legacy-note:note-1', 'folder:folder-1'],
     });
+  });
+});
+
+describe('syncNoteToSource', () => {
+  it('makes a newly saved note immediately available as an ingested raw source and wiki page', () => {
+    const { db, baseDir } = setup();
+    const savedNote = note({
+      id: 'note-autosync',
+      title: 'Cobalt Finch Field Report',
+      content: '# Cobalt Finch Field Report\n\nThe cobalt finch nested at Pier 17 and carried a brass tag labeled CF-22.',
+    });
+
+    const result = syncNoteToSource({ db, userId: 'user-1', baseDir, note: savedNote });
+
+    const rawSources = db.prepare('SELECT id, title, rawPath, tagsJson, status, summaryPageId FROM raw_sources WHERE userId = ?').all('user-1') as Array<{ id: string; title: string; rawPath: string; tagsJson: string; status: string; summaryPageId: string | null }>;
+    const wikiPages = db.prepare('SELECT title, pageType, sourceIdsJson FROM wiki_pages WHERE userId = ? AND pageType = ?').all('user-1', 'source-summary') as Array<{ title: string; pageType: string; sourceIdsJson: string }>;
+
+    expect(result.record.status).toBe('ingested');
+    expect(rawSources).toHaveLength(1);
+    expect(rawSources[0]).toEqual(expect.objectContaining({ title: 'Cobalt Finch Field Report', status: 'ingested' }));
+    expect(JSON.parse(rawSources[0].tagsJson)).toEqual(expect.arrayContaining(['legacy-note:note-autosync']));
+    expect(readFileSync(join(baseDir, 'vaults', 'user-1', rawSources[0].rawPath), 'utf-8')).toContain('brass tag labeled CF-22');
+    expect(wikiPages).toHaveLength(1);
+    expect(JSON.parse(wikiPages[0].sourceIdsJson)).toEqual([rawSources[0].id]);
   });
 });
 

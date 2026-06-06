@@ -1,7 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { readNotes, readNote, upsertNote, deleteNote } from '$lib/server/notesFile';
+import { getDb } from '$lib/server/database';
 import { triggerSummaryGeneration } from '$lib/server/noteSummarizer';
+import { syncNoteToSource } from '$lib/wiki/migration/notesToSources';
 import { createHash } from 'crypto';
 
 export const GET: RequestHandler = async ({ url, request, locals }) => {
@@ -74,6 +76,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     }
     // Trigger async summary generation (non-blocking)
     triggerSummaryGeneration(userId, body.note.id, body.note.title, body.note.content);
+    syncNoteToSource({ db: getDb(), userId, baseDir: 'data', note: body.note });
     return json({ ok: true });
   }
 

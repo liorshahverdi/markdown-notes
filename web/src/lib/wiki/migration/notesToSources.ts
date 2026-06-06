@@ -1,7 +1,10 @@
 import type Database from 'better-sqlite3';
 import type { NoteRecord } from '../../../types/note';
 import type { RawSourceRecord } from '$lib/wiki/types';
-import { importSourceText } from '$lib/wiki/ingest/sourceImporter';
+import { getUserVaultPaths } from '$lib/server/vaultPaths';
+import { writeVaultTextFile } from '$lib/server/vaultFs';
+import { importSourceText, type ImportSourceTextResult } from '$lib/wiki/ingest/sourceImporter';
+import { integrateImportedSource } from '$lib/wiki/ingest/wikiIntegrator';
 
 export interface NoteSourceImportInput {
   title: string;
@@ -86,6 +89,102 @@ export function adaptNoteToSourceImport(note: NoteRecord): NoteSourceImportInput
     sourceDate: note.dateModified ?? null,
     tags,
   };
+}
+
+interface ExistingNoteSourceRow {
+  id: string;
+  title: string;
+  slug: string;
+  sourceType: RawSourceRecord['sourceType'];
+  rawPath: string;
+  importedAt: number;
+  sourceDate: number | null;
+  status: RawSourceRecord['status'];
+  summaryPageId: string | null;
+  assetPathsJson: string;
+  tagsJson: string;
+}
+
+export interface SyncNoteToSourceInput {
+  db: Database.Database;
+  userId: string;
+  baseDir: string;
+  note: NoteRecord;
+}
+
+function findExistingNoteSource(db: Database.Database, userId: string, noteId: string): ExistingNoteSourceRow | null {
+  const tag = legacyNoteTag(noteId);
+  const rows = db
+    .prepare(`
+      SELECT id, title, slug, sourceType, rawPath, importedAt, sourceDate, status, summaryPageId, assetPathsJson, tagsJson
+      FROM raw_sources
+      WHERE userId = ? AND sourceType = ?
+    `)
+    .all(userId, 'note') as ExistingNoteSourceRow[];
+
+  return rows.find((row) => parseTags(row.tagsJson).includes(tag)) ?? null;
+}
+
+function parseAssetPaths(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((asset): asset is string => typeof asset === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function syncNoteToSource(input: SyncNoteToSourceInput): ImportSourceTextResult {
+  const source = adaptNoteToSourceImport(input.note);
+  const existing = findExistingNoteSource(input.db, input.userId, input.note.id);
+
+  if (!existing) {
+    return importSourceText({
+      db: input.db,
+      userId: input.userId,
+      baseDir: input.baseDir,
+      title: source.title,
+      content: source.content,
+      sourceType: source.sourceType,
+      sourceDate: source.sourceDate,
+      tags: source.tags,
+    });
+  }
+
+  const paths = getUserVaultPaths(input.userId, input.baseDir);
+  const absolutePath = writeVaultTextFile(paths.root, existing.rawPath, source.content);
+
+  const rawSource: RawSourceRecord = {
+    id: existing.id,
+    title: source.title,
+    slug: existing.slug,
+    sourceType: existing.sourceType,
+    rawPath: existing.rawPath,
+    assetPaths: parseAssetPaths(existing.assetPathsJson),
+    importedAt: existing.importedAt,
+    sourceDate: source.sourceDate,
+    status: 'queued',
+    summaryPageId: existing.summaryPageId,
+    tags: source.tags,
+  };
+
+  input.db
+    .prepare(`
+      UPDATE raw_sources
+      SET title = ?, sourceDate = ?, status = ?, tagsJson = ?
+      WHERE userId = ? AND id = ?
+    `)
+    .run(rawSource.title, rawSource.sourceDate ?? null, rawSource.status, JSON.stringify(rawSource.tags ?? []), input.userId, rawSource.id);
+
+  const integratedRecord = integrateImportedSource({
+    db: input.db,
+    userId: input.userId,
+    baseDir: input.baseDir,
+    source: rawSource,
+    sourceText: source.content,
+  });
+
+  return { record: integratedRecord, absolutePath };
 }
 
 export function migrateNotesToSources(input: MigrateNotesToSourcesInput): MigrateNotesToSourcesResult {
