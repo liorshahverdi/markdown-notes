@@ -1,5 +1,5 @@
 export const diagramTemplates = {
-	flowchart: `graph TD
+	flowchart: `flowchart TD
     A[Start]:::green --> B{Decision}:::orange
     B -->|Yes| C[Do thing]:::blue
     B -->|No| D[Other thing]:::red
@@ -36,27 +36,72 @@ export const diagramTemplates = {
         +purr()
     }
     Animal <|-- Dog
-    Animal <|-- Cat
-
-    style Animal fill:#f9e79f,stroke:#f1c40f,color:#333
-    style Dog fill:#aed6f1,stroke:#3498db,color:#333
-    style Cat fill:#d5f5e3,stroke:#2ecc71,color:#333`,
-	decisionTree: `graph TD
-    A{Is it raining?}:::orange
-    A -->|Yes| B{Have umbrella?}:::orange
-    A -->|No| C[Go outside]:::green
-    B -->|Yes| D[Take umbrella]:::blue
-    B -->|No| E[Stay inside]:::red
-    D --> C
-
-    classDef green fill:#2ecc71,stroke:#27ae60,color:#fff
-    classDef blue fill:#3498db,stroke:#2980b9,color:#fff
-    classDef orange fill:#f39c12,stroke:#e67e22,color:#fff
-    classDef red fill:#e74c3c,stroke:#c0392b,color:#fff`,
-	mindMap: `%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#4a7c6f','primaryTextColor':'#fff','primaryBorderColor':'#3d6b5e','secondaryColor':'#5b7fa5','secondaryTextColor':'#fff','secondaryBorderColor':'#4a6e94','tertiaryColor':'#8b6e99','tertiaryTextColor':'#fff','tertiaryBorderColor':'#7a5d88'}}}%%
-mindmap
+    Animal <|-- Cat`,
+	stateDiagram: `stateDiagram-v2
+    [*] --> Idle
+    Idle --> Active: start
+    Active --> Paused: pause
+    Paused --> Active: resume
+    Active --> [*]: finish`,
+	erDiagram: `erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    ORDER ||--|{ LINE_ITEM : contains
+    PRODUCT ||--o{ LINE_ITEM : includes
+    CUSTOMER {
+        string id
+        string name
+    }
+    ORDER {
+        string id
+        date created_at
+    }`,
+	gantt: `gantt
+    title Project Plan
+    dateFormat  YYYY-MM-DD
+    section Discovery
+    Requirements       :done,    req, 2026-01-01, 3d
+    Prototype          :active,  proto, after req, 4d
+    section Delivery
+    Build              :build, after proto, 5d
+    QA                 :qa, after build, 2d`,
+	pie: `pie title Time Allocation
+    "Research" : 35
+    "Build" : 45
+    "QA" : 20`,
+	userJourney: `journey
+    title User Journey
+    section Discover
+      Open app: 5: User
+      Import source: 4: User
+    section Learn
+      Read wiki page: 5: User
+      Ask chat: 4: User`,
+	gitGraph: `gitGraph
+    commit
+    branch feature
+    checkout feature
+    commit
+    checkout main
+    merge feature`,
+	requirement: `requirementDiagram
+    requirement vault_support {
+        id: 1
+        text: The app shall expose markdown files and folders as first-class UI
+        risk: medium
+        verifymethod: test
+    }`,
+	quadrantChart: `quadrantChart
+    title UX Priorities
+    x-axis Low effort --> High effort
+    y-axis Low impact --> High impact
+    quadrant-1 Strategic bets
+    quadrant-2 Quick wins
+    quadrant-3 Revisit later
+    quadrant-4 Costly distractions
+    Markdown vault: [0.35, 0.85]
+    Wiki health: [0.55, 0.75]`,
+	mindMap: `mindmap
     root((Project))
-        ::icon(fa fa-pencil)
         Design
             UI Mockups
             User Research
@@ -76,5 +121,68 @@ mindmap
         Test : QA testing
     section Phase 3
         Launch : Go live
-        Monitor : Track metrics`
+        Monitor : Track metrics`,
+	sankey: `sankey-beta
+    Sources,Wiki Pages,12
+    Wiki Pages,Chat Answers,8
+    Wiki Pages,Review Queue,4`,
+	xyChart: `xychart-beta
+    title "Knowledge Growth"
+    x-axis [Jan, Feb, Mar, Apr]
+    y-axis "Pages" 0 --> 100
+    bar [12, 24, 48, 72]
+    line [10, 30, 55, 90]`,
+	blockDiagram: `block-beta
+    columns 3
+    Sources[Sources] Wiki[Wiki Pages] Chat[Chat]
+    Sources --> Wiki
+    Wiki --> Chat`,
+	packet: `packet-beta
+    title Network Packet
+    0-15: "Source Port"
+    16-31: "Destination Port"
+    32-63: "Sequence Number"`,
+	architecture: `architecture-beta
+    group api(cloud)[API]
+    service client(internet)[Client]
+    service server(server)[Server] in api
+    service db(database)[Database] in api
+    client:R -- L:server
+    server:B -- T:db`,
+	radar: `radar-beta
+    title Wiki Quality
+    axis Coverage, Freshness, Accuracy, Links
+    curve Current{70, 55, 85, 60}
+    curve Target{90, 90, 95, 85}`,
+	treemap: `treemap-beta
+    "Knowledge Base"
+        "Sources": 40
+        "Wiki Pages": 35
+        "Open Questions": 10
+        "Review Queue": 15`,
+	kanban: `kanban
+    todo[Todo]
+        id1[Import sources]
+    doing[Doing]
+        id2[Update wiki]
+    done[Done]
+        id3[Verify chat]`,
+	ishikawa: `ishikawa
+    title Missed Fact Root Cause
+    Chat failure
+        Retrieval
+            Thin wiki context
+        Prompting
+            Missing raw details
+        Validation
+            No exact-fact score`,
+	c4Context: `C4Context
+    title System Context
+    Person(user, "User")
+    System(app, "Local Wiki")
+    System_Ext(ollama, "Ollama")
+    Rel(user, app, "Writes and queries markdown")
+    Rel(app, ollama, "Asks local model")`,
 };
+
+export type DiagramTemplateKey = keyof typeof diagramTemplates;

@@ -11,7 +11,7 @@
 		insertClassDef,
 		insertImage
 	} from './toolbar-actions';
-	import { diagramTemplates } from '$lib/markdown/diagramTemplates';
+	import { diagramTemplates, type DiagramTemplateKey } from '$lib/markdown/diagramTemplates';
 	import { uploadImageFile } from './imageUpload';
 
 	interface Props {
@@ -164,13 +164,30 @@
 		closeAllMenus();
 	}
 
-	const diagramItems: { label: string; key: keyof typeof diagramTemplates }[] = [
+	const diagramItems: { label: string; key: DiagramTemplateKey }[] = [
 		{ label: 'Flowchart', key: 'flowchart' },
 		{ label: 'Sequence', key: 'sequence' },
 		{ label: 'Class Diagram', key: 'classDiagram' },
-		{ label: 'Decision Tree', key: 'decisionTree' },
+		{ label: 'State Diagram', key: 'stateDiagram' },
+		{ label: 'ER Diagram', key: 'erDiagram' },
+		{ label: 'Gantt', key: 'gantt' },
+		{ label: 'Pie Chart', key: 'pie' },
+		{ label: 'User Journey', key: 'userJourney' },
+		{ label: 'Git Graph', key: 'gitGraph' },
+		{ label: 'Requirement', key: 'requirement' },
+		{ label: 'Quadrant Chart', key: 'quadrantChart' },
 		{ label: 'Mind Map', key: 'mindMap' },
-		{ label: 'Timeline', key: 'timeline' }
+		{ label: 'Timeline', key: 'timeline' },
+		{ label: 'Sankey', key: 'sankey' },
+		{ label: 'XY Chart', key: 'xyChart' },
+		{ label: 'Block Diagram', key: 'blockDiagram' },
+		{ label: 'Packet', key: 'packet' },
+		{ label: 'Architecture', key: 'architecture' },
+		{ label: 'Radar', key: 'radar' },
+		{ label: 'Treemap', key: 'treemap' },
+		{ label: 'Kanban', key: 'kanban' },
+		{ label: 'Ishikawa', key: 'ishikawa' },
+		{ label: 'C4 Context', key: 'c4Context' }
 	];
 </script>
 

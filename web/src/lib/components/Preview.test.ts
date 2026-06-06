@@ -167,8 +167,11 @@ describe('EmptyState', () => {
 
 		const { container } = render(EmptyState);
 
-		expect(container.textContent).toContain('A blank page awaits.');
-		expect(container.textContent).toContain('Select a note from your library');
+		expect(container.textContent).toContain('Build your local markdown wiki.');
+		expect(container.textContent).toContain('Import sources');
+		expect(container.textContent).toContain('markdown vault');
+		expect(container.textContent).toContain('folders');
+		expect(container.textContent).toContain('generated wiki pages');
 	});
 
 	it('renders a document icon', async () => {

@@ -155,7 +155,7 @@ Schema docs can be generated into `schema/` and describe raw sources, wiki pages
 | Local LLM | Ollama |
 | Persistence | SQLite + managed markdown vault |
 | Editor | CodeMirror 6 |
-| Graph | deterministic extraction plus existing knowledge-graph tooling |
+| Experimental graph | legacy entity/skills/self-improvement tooling under `/experimental/knowledge-graph` |
 | Testing | Vitest + jsdom + @testing-library/svelte |
 
 ---

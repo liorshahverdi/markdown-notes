@@ -53,7 +53,7 @@
   import type { ImprovementRecord } from '$lib/graph/improvementLog';
   import { createSelfImprover } from '$lib/graph/selfImprover';
   import { db } from '$lib/db/index';
-  import type { GraphRelation } from '../../types/graph';
+  import type { GraphRelation } from '../../../types/graph';
   import { generateSkillStream } from '$lib/skills/skillGenerator';
   import { ragConfig } from '$lib/stores/rag';
   import { traces, loadTraces } from '$lib/stores/traces';
@@ -419,9 +419,9 @@
   <!-- Left sidebar: controls -->
   <aside class="kg-aside kg-aside--left">
     <header class="kg-page-header">
-      <span class="label-meta">Atlas</span>
+      <span class="label-meta">Experimental</span>
       <h1 class="kg-page-title">Knowledge Graph</h1>
-      <p class="kg-page-sub">Entities and relationships extracted from your library.</p>
+      <p class="kg-page-sub">Experimental entity graph, skills, and self-improvement tooling kept outside the primary wiki workflow.</p>
     </header>
 
     <section class="kg-section">
@@ -501,7 +501,7 @@
     </section>
 
     <section class="kg-section">
-      <a href="/" class="kg-btn kg-btn--ghost">← Back to library</a>
+      <a href="/" class="kg-btn kg-btn--ghost">← Back to wiki</a>
     </section>
   </aside>
 

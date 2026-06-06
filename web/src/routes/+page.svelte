@@ -32,6 +32,7 @@
 	import LegacyMigrationPanel from '$lib/components/LegacyMigrationPanel.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import { chatOpen } from '$lib/stores/chat';
+	import { getHomeShellPolicy } from '$lib/navigation/homeShell';
 
 	// Dictation state
 	let isDictating = $state(false);
@@ -161,6 +162,16 @@
 	// Mobile responsive state
 	let isMobile = $state(false);
 	let sidebarOpen = $state(false);
+	let legacyBrowserOpen = $state(false);
+
+	let homeShellPolicy = $derived(
+		getHomeShellPolicy({
+			isMobile,
+			hasSelectedNote: $selectedNote != null,
+			legacyBrowserOpen,
+			mobileSidebarOpen: sidebarOpen,
+		})
+	);
 
 	function checkMobile() {
 		isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
@@ -207,6 +218,14 @@
 	function onMouseUp() {
 		isDragging = null;
 	}
+
+	function openLegacyNotesBrowser() {
+		if (isMobile) {
+			sidebarOpen = true;
+		} else {
+			legacyBrowserOpen = true;
+		}
+	}
 </script>
 
 <svelte:window onmousemove={onMouseMove} onmouseup={onMouseUp} />
@@ -233,14 +252,14 @@
 >
 	<!-- Sidebar: slide-out drawer on mobile, fixed on desktop -->
 	{#if isMobile}
-		{#if sidebarOpen}
+		{#if homeShellPolicy.showMobileSidebar}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="fixed inset-0 z-30 bg-black/40" onclick={() => sidebarOpen = false}></div>
 			<div class="fixed inset-y-0 left-0 z-30 w-72 shadow-xl">
 				<Sidebar />
 			</div>
 		{/if}
-	{:else}
+	{:else if homeShellPolicy.showDesktopSidebar}
 		<div
 			class="h-full flex-shrink-0 overflow-hidden"
 			style="width: {sidebarWidth}px;"
@@ -249,11 +268,13 @@
 		</div>
 
 		<!-- Sidebar drag handle -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="resize-handle"
-			onmousedown={() => onMouseDown('sidebar')}
-		></div>
+		{#if homeShellPolicy.showDesktopResizeHandle}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="resize-handle"
+				onmousedown={() => onMouseDown('sidebar')}
+			></div>
+		{/if}
 	{/if}
 
 	<!-- Content area (fills remaining space) -->
@@ -316,6 +337,15 @@
 			{:else}
 				<div class="flex min-h-full flex-col items-center justify-center gap-6 px-6 py-8">
 					<EmptyState />
+					{#if homeShellPolicy.showLegacyOpenAction}
+						<button
+							type="button"
+							class="legacy-notes-action"
+							onclick={openLegacyNotesBrowser}
+						>
+							Browse legacy notes
+						</button>
+					{/if}
 					<div class="grid w-full max-w-6xl grid-cols-1 gap-4 xl:grid-cols-2">
 						<SourcesPane />
 						<IngestReviewPanel />
@@ -331,6 +361,25 @@
 </div>
 
 <style>
+	.legacy-notes-action {
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 8px 14px;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-text-secondary);
+		background: var(--color-bg);
+		transition: border-color 120ms ease, color 120ms ease, transform 120ms ease;
+	}
+
+	.legacy-notes-action:hover {
+		border-color: var(--brand-500);
+		color: var(--color-text);
+		transform: translateY(-1px);
+	}
+
 	.resize-handle {
 		height: 100%;
 		width: 4px;

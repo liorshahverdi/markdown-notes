@@ -1,70 +1,92 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import mermaid from 'mermaid';
 import { diagramTemplates } from './diagramTemplates';
 
+const expectedTemplateKeys = [
+	'flowchart',
+	'sequence',
+	'classDiagram',
+	'stateDiagram',
+	'erDiagram',
+	'gantt',
+	'pie',
+	'userJourney',
+	'gitGraph',
+	'requirement',
+	'quadrantChart',
+	'mindMap',
+	'timeline',
+	'sankey',
+	'xyChart',
+	'blockDiagram',
+	'packet',
+	'architecture',
+	'radar',
+	'treemap',
+	'kanban',
+	'ishikawa',
+	'c4Context',
+] as const;
+
+const expectedDetectedTypes = new Set([
+	'flowchart-v2',
+	'flowchart',
+	'sequence',
+	'class',
+	'stateDiagram',
+	'er',
+	'gantt',
+	'pie',
+	'journey',
+	'gitGraph',
+	'requirement',
+	'quadrantChart',
+	'mindmap',
+	'timeline',
+	'sankey',
+	'xychart',
+	'block',
+	'packet',
+	'architecture',
+	'radar',
+	'treemap',
+	'kanban',
+	'ishikawa',
+	'c4',
+]);
+
 describe('diagramTemplates', () => {
-	it('exports exactly 6 templates', () => {
-		expect(Object.keys(diagramTemplates)).toHaveLength(6);
+	beforeAll(() => {
+		mermaid.initialize({ startOnLoad: false });
 	});
 
-	it('has the correct template keys', () => {
-		const keys = Object.keys(diagramTemplates);
-		expect(keys).toContain('flowchart');
-		expect(keys).toContain('sequence');
-		expect(keys).toContain('classDiagram');
-		expect(keys).toContain('decisionTree');
-		expect(keys).toContain('mindMap');
-		expect(keys).toContain('timeline');
+	it('exports templates for every Mermaid diagram family exposed by the toolbar', () => {
+		expect(Object.keys(diagramTemplates).sort()).toEqual([...expectedTemplateKeys].sort());
 	});
 
-	it('flowchart starts with graph TD', () => {
-		expect(diagramTemplates.flowchart.trimStart()).toMatch(/^graph TD/);
-	});
+	it('keeps every Mermaid template detectable by Mermaid before it is inserted into markdown', () => {
+		const detectedTypes = new Set<string>();
 
-	it('sequence starts with sequenceDiagram', () => {
-		expect(diagramTemplates.sequence.trimStart()).toMatch(/^sequenceDiagram/);
-	});
-
-	it('classDiagram starts with classDiagram', () => {
-		expect(diagramTemplates.classDiagram.trimStart()).toMatch(/^classDiagram/);
-	});
-
-	it('decisionTree starts with graph TD', () => {
-		expect(diagramTemplates.decisionTree.trimStart()).toMatch(/^graph TD/);
-	});
-
-	it('mindMap contains mindmap keyword', () => {
-		expect(diagramTemplates.mindMap).toContain('mindmap');
-	});
-
-	it('timeline starts with timeline', () => {
-		expect(diagramTemplates.timeline.trimStart()).toMatch(/^timeline/);
-	});
-
-	it('flowchart contains classDef definitions', () => {
-		expect(diagramTemplates.flowchart).toContain('classDef green');
-		expect(diagramTemplates.flowchart).toContain('classDef blue');
-		expect(diagramTemplates.flowchart).toContain('classDef orange');
-		expect(diagramTemplates.flowchart).toContain('classDef red');
-	});
-
-	it('sequence contains actor and participant', () => {
-		expect(diagramTemplates.sequence).toContain('actor User');
-		expect(diagramTemplates.sequence).toContain('participant App');
-		expect(diagramTemplates.sequence).toContain('participant Server');
-	});
-
-	it('classDiagram contains Animal, Dog, Cat', () => {
-		expect(diagramTemplates.classDiagram).toContain('class Animal');
-		expect(diagramTemplates.classDiagram).toContain('class Dog');
-		expect(diagramTemplates.classDiagram).toContain('class Cat');
-		expect(diagramTemplates.classDiagram).toContain('Animal <|-- Dog');
-		expect(diagramTemplates.classDiagram).toContain('Animal <|-- Cat');
-	});
-
-	it('all templates are non-empty strings', () => {
-		for (const [key, value] of Object.entries(diagramTemplates)) {
-			expect(typeof value).toBe('string');
-			expect(value.length).toBeGreaterThan(0);
+		for (const key of expectedTemplateKeys) {
+			const template = diagramTemplates[key];
+			expect(template.trim().length, `${key} should not be empty`).toBeGreaterThan(0);
+			detectedTypes.add(mermaid.detectType(template));
 		}
+
+		for (const type of detectedTypes) {
+			expect(expectedDetectedTypes.has(type), `${type} should be a supported Mermaid type`).toBe(true);
+		}
+	});
+
+	it('includes the markdown/wiki diagram types users commonly expect', () => {
+		expect(diagramTemplates.flowchart.trimStart()).toMatch(/^(graph|flowchart) TD/);
+		expect(diagramTemplates.sequence.trimStart()).toMatch(/^sequenceDiagram/);
+		expect(diagramTemplates.classDiagram.trimStart()).toMatch(/^classDiagram/);
+		expect(diagramTemplates.stateDiagram.trimStart()).toMatch(/^stateDiagram-v2/);
+		expect(diagramTemplates.erDiagram.trimStart()).toMatch(/^erDiagram/);
+		expect(diagramTemplates.gantt.trimStart()).toMatch(/^gantt/);
+		expect(diagramTemplates.pie.trimStart()).toMatch(/^pie/);
+		expect(diagramTemplates.mindMap).toContain('mindmap');
+		expect(diagramTemplates.timeline.trimStart()).toMatch(/^timeline/);
 	});
 });

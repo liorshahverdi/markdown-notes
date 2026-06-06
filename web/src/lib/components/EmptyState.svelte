@@ -18,21 +18,25 @@
 	</div>
 
 	<div class="empty-state__copy">
-		<h2 class="empty-state__title">A blank page awaits.</h2>
+		<h2 class="empty-state__title">Build your local markdown wiki.</h2>
 		<p class="empty-state__sub">
-			Select a note from your library, or compose a new one.<br />
-			Each note becomes a node in your knowledge graph.
+			Import sources, maintain generated wiki pages,<br />
+			and keep markdown vault files organized in folders.
 		</p>
 	</div>
 
 	<div class="empty-state__hints">
 		<div class="empty-state__hint">
-			<span class="kbd">⌘</span><span class="kbd">N</span>
-			<span class="empty-state__hint-label">New note</span>
+			<span class="empty-state__hint-label">Import sources</span>
 		</div>
 		<div class="empty-state__hint">
-			<span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">D</span>
-			<span class="empty-state__hint-label">Dictate</span>
+			<span class="empty-state__hint-label">Markdown vault</span>
+		</div>
+		<div class="empty-state__hint">
+			<span class="empty-state__hint-label">Folders</span>
+		</div>
+		<div class="empty-state__hint">
+			<span class="empty-state__hint-label">Review wiki health</span>
 		</div>
 	</div>
 </div>

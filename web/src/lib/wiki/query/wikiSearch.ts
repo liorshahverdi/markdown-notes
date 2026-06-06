@@ -37,6 +37,7 @@ interface WikiPageRow {
   pageType: string;
   wikiPath: string;
   summary: string;
+  sourceIdsJson: string;
   entityKeysJson: string;
 }
 
@@ -86,24 +87,62 @@ function safeReadVaultText(vaultRoot: string, relativePath: string): string {
   return readVaultTextFile(vaultRoot, relativePath);
 }
 
+function parseSourceIds(sourceIdsJson: string): string[] {
+  try {
+    const sourceIds = JSON.parse(sourceIdsJson) as unknown;
+    return Array.isArray(sourceIds) ? sourceIds.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function linkedRawSourceContext(input: SearchWikiFirstInput, vaultRoot: string, sourceIds: string[], query: string): string {
+  if (sourceIds.length === 0) return '';
+  const rows = input.db
+    .prepare(`
+      SELECT id, title, slug, rawPath
+      FROM raw_sources
+      WHERE userId = ? AND status = ?
+    `)
+    .all(input.userId, 'ingested') as RawSourceRow[];
+  const sourceIdSet = new Set(sourceIds);
+  const excerpts = rows
+    .filter((row) => sourceIdSet.has(row.id))
+    .map((row) => {
+      const rawText = safeReadVaultText(vaultRoot, row.rawPath);
+      if (!rawText) return '';
+      return [
+        `Supporting raw source: [raw-source:${row.id}] ${row.title}`,
+        `Path: ${row.rawPath}`,
+        excerptFor(rawText, query, 1200),
+      ].join('\n');
+    })
+    .filter(Boolean);
+
+  return excerpts.length > 0 ? excerpts.join('\n\n') : '';
+}
+
 function searchWikiPages(input: SearchWikiFirstInput, vaultRoot: string): WikiSearchResult[] {
   const rows = input.db
-    .prepare('SELECT id, title, slug, pageType, wikiPath, summary, entityKeysJson FROM wiki_pages WHERE userId = ? AND pageType NOT IN (?, ?)')
+    .prepare('SELECT id, title, slug, pageType, wikiPath, summary, sourceIdsJson, entityKeysJson FROM wiki_pages WHERE userId = ? AND pageType NOT IN (?, ?)')
     .all(input.userId, 'index', 'log') as WikiPageRow[];
 
   return rows
     .map((row) => {
       const markdown = safeReadVaultText(vaultRoot, row.wikiPath);
       const entityKeys = JSON.parse(row.entityKeysJson) as string[];
-      const corpus = `${row.title}\n${row.slug}\n${row.summary}\n${entityKeys.join('\n')}\n${markdown}`;
+      const sourceIds = parseSourceIds(row.sourceIdsJson);
+      const supportingRawContext = linkedRawSourceContext(input, vaultRoot, sourceIds, input.query);
+      const corpus = `${row.title}\n${row.slug}\n${row.summary}\n${entityKeys.join('\n')}\n${markdown}\n${supportingRawContext}`;
       const score = scoreText(input.query, corpus, row.title, row.slug);
+      const primaryExcerpt = excerptFor(markdown || row.summary, input.query);
       return {
         id: row.id,
         title: row.title,
         wikiPath: row.wikiPath,
         sourceKind: 'wiki-page' as const,
         score,
-        excerpt: excerptFor(markdown || row.summary, input.query),
+        excerpt: supportingRawContext ? `${primaryExcerpt}\n\nLinked supporting raw-source details:\n${supportingRawContext}` : primaryExcerpt,
       };
     })
     .filter((result) => result.score > 0)

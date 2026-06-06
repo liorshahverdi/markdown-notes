@@ -9,7 +9,7 @@
 	import { proxyCheckHealth } from '$lib/llm/ollamaProxy';
 	import { createWakeWordDetector } from '$lib/voice/wakeWordDetector';
 	import { loadVoicePreferences } from '$lib/voice/voicePreferences';
-	import { startSelfImproverBackground, stopSelfImproverBackground } from '$lib/graph/selfImproverBackground';
+	import { experimentalNavItems, primaryNavItems } from '$lib/navigation/navItems';
 	import { get } from 'svelte/store';
 	import { page } from '$app/stores';
 
@@ -65,7 +65,6 @@
 		restoreTheme();
 		checkHealth();
 		healthInterval = setInterval(checkHealth, 30_000);
-		startSelfImproverBackground();
 
 		// Initialize wake word detector if enabled in voice settings
 		try {
@@ -88,7 +87,6 @@
 	onDestroy(() => {
 		if (healthInterval) clearInterval(healthInterval);
 		wakeWordDetector?.stop();
-		stopSelfImproverBackground();
 	});
 
 	function toggleDarkMode() {
@@ -157,13 +155,20 @@
 				<span class="hairline-v hidden md:block" style="height:18px"></span>
 
 				<div class="app-nav__links" role="navigation">
-					<a href="/" class="navlink" class:is-active={isActive('/')}>Notes</a>
-					<a href="/knowledge-graph" class="navlink" class:is-active={isActive('/knowledge-graph')}>Graph</a>
-					<a href="/help" class="navlink" class:is-active={isActive('/help')}>Help</a>
+					{#each primaryNavItems as item}
+						<a href={item.href} class="navlink" class:is-active={isActive(item.href)}>{item.label}</a>
+					{/each}
 				</div>
 			</div>
 
 			<div class="app-nav__right">
+				<div class="experimental-menu">
+					<span class="experimental-menu__label">Experimental</span>
+					{#each experimentalNavItems as item}
+						<a href={item.href} class="experimental-menu__link" class:is-active={isActive(item.href)}>{item.label}</a>
+					{/each}
+				</div>
+
 				<!-- Ollama status pill -->
 				<div class="status-pill" title="Ollama: {$ollamaStatus}">
 					<span class="status-dot {ollamaStatusClass}"></span>
@@ -327,6 +332,39 @@
 
 	:global(.dark) .navlink.is-active::after {
 		background: var(--brand-500);
+	}
+
+	.experimental-menu {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 3px 6px;
+		border-radius: 999px;
+		background: var(--color-surface);
+		border: 1px dashed var(--color-border-subtle);
+	}
+
+	.experimental-menu__label {
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--color-text-tertiary);
+	}
+
+	.experimental-menu__link {
+		padding: 3px 7px;
+		border-radius: 999px;
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		text-decoration: none;
+	}
+
+	.experimental-menu__link:hover,
+	.experimental-menu__link.is-active {
+		color: var(--color-text);
+		background: var(--color-bg);
 	}
 
 	.status-pill {
