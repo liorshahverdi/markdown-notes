@@ -32,10 +32,11 @@
   <h2 class="text-sm font-semibold text-gray-900 mb-3">Combine Skills</h2>
 
   <div class="mb-3">
-    <label class="block text-xs font-medium text-gray-700 mb-1">Mode</label>
-    <div class="flex gap-2">
+    <div class="block text-xs font-medium text-gray-700 mb-1">Mode</div>
+    <div class="flex gap-2" role="group" aria-label="Skill combination mode">
       {#each ['merge', 'chain', 'bridge'] as m}
         <button
+          type="button"
           onclick={() => mode = m as typeof mode}
           class="rounded-md px-3 py-1 text-xs font-medium border transition-colors"
           class:bg-indigo-600={mode === m}
@@ -52,9 +53,9 @@
   </div>
 
   <div class="mb-3 max-h-48 overflow-y-auto">
-    <label class="block text-xs font-medium text-gray-700 mb-1">
+    <div class="block text-xs font-medium text-gray-700 mb-1">
       Select skills ({selectedIds.size} selected)
-    </label>
+    </div>
     {#each skills as skill (skill.id)}
       <label class="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-50 cursor-pointer">
         <input
@@ -70,6 +71,7 @@
   </div>
 
   <button
+    type="button"
     onclick={handleCombine}
     disabled={!canCombine}
     class="w-full rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors"

@@ -253,8 +253,12 @@
 	<!-- Sidebar: slide-out drawer on mobile, fixed on desktop -->
 	{#if isMobile}
 		{#if homeShellPolicy.showMobileSidebar}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="fixed inset-0 z-30 bg-black/40" onclick={() => sidebarOpen = false}></div>
+			<button
+				type="button"
+				class="fixed inset-0 z-30 bg-black/40"
+				onclick={() => sidebarOpen = false}
+				aria-label="Close sidebar"
+			></button>
 			<div class="fixed inset-y-0 left-0 z-30 w-72 shadow-xl">
 				<Sidebar />
 			</div>

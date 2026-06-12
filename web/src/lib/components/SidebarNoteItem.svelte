@@ -253,11 +253,13 @@
 
 <!-- Move picker overlay -->
 {#if showMovePicker}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg py-1 min-w-[200px] max-h-60 overflow-y-auto"
     style="left: {contextMenuX}px; top: {contextMenuY}px;"
     onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => e.stopPropagation()}
+    role="menu"
+    tabindex="-1"
   >
     <div class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase">Move to folder</div>
     <button

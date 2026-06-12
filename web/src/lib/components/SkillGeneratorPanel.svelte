@@ -9,7 +9,7 @@
   }
 
   let { skillMarkdown, onApprove, onReject, onRegenerate }: Props = $props();
-  let editableMarkdown = $state(skillMarkdown);
+  let editableMarkdown = $state('');
 
   $effect(() => {
     editableMarkdown = skillMarkdown;
@@ -38,18 +38,21 @@
 
   <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
     <button
+      type="button"
       onclick={onReject}
       class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
     >
       Reject
     </button>
     <button
+      type="button"
       onclick={onRegenerate}
       class="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
     >
       Regenerate
     </button>
     <button
+      type="button"
       onclick={handleApprove}
       class="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
     >

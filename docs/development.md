@@ -7,6 +7,15 @@
 - Swift 5.9+ and macOS 14+ for the native app
 - Optional: Ollama for local LLM workflows
 
+## Convenience commands
+
+From the repository root:
+
+```bash
+make setup
+make check
+```
+
 ## Web app
 
 ```bash

@@ -51,8 +51,12 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="fixed inset-0 z-50 flex items-center justify-center" onkeydown={handleKeydown}>
     <!-- Backdrop -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="absolute inset-0 bg-black/40" onclick={onCancel}></div>
+    <button
+      type="button"
+      class="absolute inset-0 bg-black/40"
+      onclick={onCancel}
+      aria-label="Cancel confirmation"
+    ></button>
 
     <!-- Modal -->
     <div

@@ -196,6 +196,7 @@
     class:is-drag-over={isDragOverBg}
     role="listbox"
     aria-label="Notes list"
+    tabindex="0"
     ondragover={handleBgDragOver}
     ondragleave={handleBgDragLeave}
     ondrop={handleBgDrop}

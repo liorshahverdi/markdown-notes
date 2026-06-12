@@ -173,11 +173,12 @@
 		onkeydown={handleKeydown}
 	>
 		<!-- Backdrop -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
+		<button
+			type="button"
 			class="absolute inset-0 bg-black/40"
 			onclick={onClose}
-		></div>
+			aria-label="Close settings"
+		></button>
 
 		<!-- Panel -->
 		<div

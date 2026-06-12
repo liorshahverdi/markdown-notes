@@ -2,6 +2,7 @@
   import type { FolderTreeNode } from '$lib/stores/folders';
   import { selectedFolderId, expandedFolderIds, toggleFolderExpanded, expandFolder, renameFolder, deleteFolder, createFolder, moveFolder, getMovableFolders, moveNoteToFolder, getFolderPath } from '$lib/stores/folders';
   import { selectedNoteId, deleteNote, togglePin } from '$lib/stores/notes';
+  import SidebarFolderItem from './SidebarFolderItem.svelte';
   import SidebarNoteItem from './SidebarNoteItem.svelte';
   import ConfirmModal from './ConfirmModal.svelte';
 
@@ -41,6 +42,17 @@
   function handleChevronClick(e: MouseEvent) {
     e.stopPropagation();
     toggleFolderExpanded(folder.id);
+  }
+
+  function handleFolderKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  }
+
+  function stopPropagationKeydown(e: KeyboardEvent) {
+    e.stopPropagation();
   }
 
   function handleContextMenu(e: MouseEvent) {
@@ -156,13 +168,13 @@
 
 <svelte:window onclick={handleWindowClick} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="folder-item"
   class:is-selected={isSelected}
   class:is-drag-over={isDragOver}
   style="padding-left: {6 + depth * 14}px;"
   onclick={handleClick}
+  onkeydown={handleFolderKeydown}
   ondblclick={handleDblClick}
   oncontextmenu={handleContextMenu}
   ondragover={handleDragOver}
@@ -172,18 +184,18 @@
   tabindex="0"
 >
   {#if hasExpandableContent}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <span
+    <button
+      type="button"
       class="folder-item__chevron"
       class:is-open={isExpanded}
       onclick={handleChevronClick}
-      role="button"
-      tabindex="-1"
+      onkeydown={stopPropagationKeydown}
+      aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
     >
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
       </svg>
-    </span>
+    </button>
   {:else}
     <span class="folder-item__chevron"></span>
   {/if}
@@ -246,6 +258,9 @@
     justify-content: center;
     width: 14px;
     height: 14px;
+    padding: 0;
+    border: 0;
+    background: transparent;
     color: var(--color-text-tertiary);
     flex-shrink: 0;
     transition: transform 120ms ease, color 120ms ease;
@@ -313,7 +328,7 @@
 <!-- Expanded content: subfolders then notes -->
 {#if hasExpandableContent && isExpanded}
   {#each folder.children as child (child.id)}
-    <svelte:self folder={child} depth={depth + 1} />
+    <SidebarFolderItem folder={child} depth={depth + 1} />
   {/each}
   {#each folder.notes as note (note.id)}
     <div style="padding-left: {8 + (depth + 1) * 16}px;">
@@ -353,11 +368,13 @@
 
 <!-- Move picker overlay -->
 {#if showMovePicker}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg py-1 min-w-[200px] max-h-60 overflow-y-auto"
     style="left: {contextMenuX}px; top: {contextMenuY}px;"
     onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => e.stopPropagation()}
+    role="menu"
+    tabindex="-1"
   >
     <div class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase">Move to</div>
     <button

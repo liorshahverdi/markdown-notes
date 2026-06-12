@@ -4,8 +4,12 @@
 
 	let { section, expanded = false }: { section: HelpSectionData; expanded: boolean } = $props();
 
-	let isExpanded = $state(expanded);
+	let isExpanded = $state(false);
 	let html = $derived(renderMarkdown(section.content));
+
+	$effect(() => {
+		isExpanded = expanded;
+	});
 
 	function toggle() {
 		isExpanded = !isExpanded;

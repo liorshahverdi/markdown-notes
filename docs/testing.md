@@ -27,4 +27,4 @@ swift test
 
 ## Current known warnings
 
-The web app currently has Svelte accessibility warnings and bundle-size warnings. They do not fail the current checks, but should be reduced before a polished public release.
+The web app currently has bundle-size warnings and an `onnxruntime-web` eval warning from the optional local ML/vector stack. They do not fail the current checks, but should be reduced before a polished public release.
