@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { join } from 'node:path';
 import { getDb } from '$lib/server/database';
+import { getDataDir } from '$lib/server/dataDir';
 import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
 import { queryOllama, checkOllamaHealth } from '$lib/vector/ragPipeline';
 import { buildWikiFirstQueryContext } from '$lib/wiki/query/queryPipeline';
@@ -33,7 +33,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   const queryContext = buildWikiFirstQueryContext({
     db: getDb(),
     userId: locals.user?.id ?? DEFAULT_USER_ID,
-    baseDir: join(process.cwd(), 'data'),
+    baseDir: getDataDir(),
     query,
     topK: DEFAULT_TOP_K,
   });

@@ -2,12 +2,13 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { getDataDir } from '$lib/server/dataDir';
 import { readFolders, readNotes } from '$lib/server/notesFile';
 import { buildGraphSnapshot, selectGraphSubsetForNotes } from '$lib/server/graphSnapshot';
 import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
 import { generateSkill } from '$lib/skills/skillGenerator';
 
-const SKILLS_FILE = join(process.cwd(), 'data', 'skills.json');
+const SKILLS_FILE = join(getDataDir(), 'skills.json');
 
 function readSkills(): Array<Record<string, unknown>> {
   if (!existsSync(SKILLS_FILE)) return [];

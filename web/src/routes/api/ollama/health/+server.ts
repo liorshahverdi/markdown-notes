@@ -1,11 +1,15 @@
-import { json } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { checkOllamaHealth } from '$lib/vector/ragPipeline';
-
-const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
 
 export const GET: RequestHandler = async ({ url }) => {
-  const ollamaUrl = url.searchParams.get('ollamaUrl') || DEFAULT_OLLAMA_URL;
+  let ollamaUrl: string;
+  try {
+    ollamaUrl = resolveOllamaBaseUrl(url.searchParams.get('ollamaUrl') || undefined);
+  } catch (err) {
+    throw error(400, err instanceof Error ? err.message : 'Invalid Ollama URL');
+  }
   const ok = await checkOllamaHealth(ollamaUrl);
   return json({ ok });
 };

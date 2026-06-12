@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-
-const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
 const DEFAULT_MODEL = 'llama3.2:3b';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -17,7 +16,12 @@ export const POST: RequestHandler = async ({ request }) => {
     throw error(400, 'Missing or invalid prompt');
   }
 
-  const url = ollamaUrl || DEFAULT_OLLAMA_URL;
+  let url: string;
+  try {
+    url = resolveOllamaBaseUrl(ollamaUrl);
+  } catch (err) {
+    throw error(400, err instanceof Error ? err.message : 'Invalid Ollama URL');
+  }
   const model = ollamaModel || DEFAULT_MODEL;
 
   try {

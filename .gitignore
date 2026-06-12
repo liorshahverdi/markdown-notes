@@ -9,6 +9,7 @@
 
 # Dependency and build artifacts
 **/node_modules/
+**/.build/
 **/.svelte-kit/
 **/.vite/
 **/.vite-temp/
@@ -34,5 +35,3 @@
 **/*.db-wal
 web/data/
 
-# Keep unrelated sibling app out of this repo
-MarkdownNotes/

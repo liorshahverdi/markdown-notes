@@ -1,7 +1,12 @@
 {
-  "name": "notes-cli",
+  "name": "markdown-notes-cli",
   "version": "0.1.0",
+  "description": "Command-line client for the Markdown Notes local wiki web app.",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "bin": { "notes-cli": "./bin/notes-cli.ts" },
   "scripts": { "test": "vitest run" },
   "dependencies": {

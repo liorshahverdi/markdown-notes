@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-
-const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
 const DEFAULT_MODEL = 'nomic-embed-text';
 const TIMEOUT_MS = 30_000;
 
@@ -17,7 +16,12 @@ export const POST: RequestHandler = async ({ request }) => {
     throw error(400, 'Missing input');
   }
 
-  const url = ollamaUrl || DEFAULT_OLLAMA_URL;
+  let url: string;
+  try {
+    url = resolveOllamaBaseUrl(ollamaUrl);
+  } catch (err) {
+    throw error(400, err instanceof Error ? err.message : 'Invalid Ollama URL');
+  }
   const embeddingModel = model || DEFAULT_MODEL;
 
   try {

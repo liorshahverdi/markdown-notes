@@ -6,10 +6,10 @@
  */
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { resolve, join } from 'node:path';
 import Database from 'better-sqlite3';
 
-const DATA_DIR = join(process.cwd(), 'data');
+const DATA_DIR = resolve(process.cwd(), process.env.MARKDOWN_NOTES_DATA_DIR?.trim() || 'data');
 const NOTES_DIR = join(DATA_DIR, 'notes');
 const FOLDERS_DIR = join(DATA_DIR, 'folders');
 const USERS_FILE = join(DATA_DIR, 'users.json');

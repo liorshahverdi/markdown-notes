@@ -1,15 +1,23 @@
 {
-	"name": "web",
+	"name": "markdown-notes-web",
 	"private": true,
 	"version": "0.0.1",
+	"description": "Local-first Markdown wiki web app with SvelteKit, SQLite, and Ollama integration.",
+	"license": "MIT",
 	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"ci": "npm run check && npm test && npm run build"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.0",
@@ -28,6 +36,10 @@
 		"typescript": "^5.9.3",
 		"vite": "^7.3.1",
 		"vitest": "^4.1.2"
+	},
+	"overrides": {
+		"cookie": "^1.1.1",
+		"protobufjs": "^7.5.9"
 	},
 	"dependencies": {
 		"@codemirror/commands": "^6.10.3",

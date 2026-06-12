@@ -1,8 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { queryOllama, type ChatMessage } from '$lib/vector/ragPipeline';
-
-const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
 const DEFAULT_MODEL = 'llama3.2:3b';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -20,8 +19,15 @@ export const POST: RequestHandler = async ({ request }) => {
     throw error(400, 'Missing or invalid prompt/messages');
   }
 
+  let resolvedOllamaUrl: string;
+  try {
+    resolvedOllamaUrl = resolveOllamaBaseUrl(ollamaUrl);
+  } catch (err) {
+    throw error(400, err instanceof Error ? err.message : 'Invalid Ollama URL');
+  }
+
   const config = {
-    ollamaUrl: ollamaUrl || DEFAULT_OLLAMA_URL,
+    ollamaUrl: resolvedOllamaUrl,
     model: model || DEFAULT_MODEL,
     topK: topK ?? 5,
   };

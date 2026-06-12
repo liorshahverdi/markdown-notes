@@ -1,16 +1,15 @@
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { mkdirSync, existsSync } from 'node:fs';
+import { getDataDir } from './dataDir';
 
 const require = createRequire(import.meta.url);
 const BetterSqlite3 = require('better-sqlite3') as typeof import('better-sqlite3');
 type SqliteDatabase = import('better-sqlite3').Database;
 
-const DATA_DIR = join(process.cwd(), 'data');
-
-function ensureDataDir(): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
+function ensureDataDir(dataDir: string): void {
+  if (!existsSync(dataDir)) {
+    mkdirSync(dataDir, { recursive: true });
   }
 }
 
@@ -130,8 +129,9 @@ let _db: SqliteDatabase | null = null;
 export function getDb(): SqliteDatabase {
   if (_db) return _db;
 
-  ensureDataDir();
-  _db = new BetterSqlite3(join(DATA_DIR, 'app.db'));
+  const dataDir = getDataDir();
+  ensureDataDir(dataDir);
+  _db = new BetterSqlite3(join(dataDir, 'app.db'));
   initializeDatabase(_db);
 
   return _db;

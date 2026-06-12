@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { resolve, join, relative, sep } from 'node:path';
+import { getDataDir } from './dataDir';
 
 export interface UserVaultPaths {
   root: string;
@@ -9,9 +10,7 @@ export interface UserVaultPaths {
   stateDir: string;
 }
 
-const DEFAULT_DATA_DIR = resolve(process.cwd(), 'data');
-
-export function getUserVaultPaths(userId: string, baseDir: string = DEFAULT_DATA_DIR): UserVaultPaths {
+export function getUserVaultPaths(userId: string, baseDir: string = getDataDir()): UserVaultPaths {
   const root = resolve(baseDir, 'vaults', userId);
 
   return {

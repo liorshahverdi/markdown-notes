@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { join } from 'node:path';
 import { getDb } from '$lib/server/database';
+import { getDataDir } from '$lib/server/dataDir';
 import { fileAnswerToWiki } from '$lib/wiki/query/fileAnswerWorkflow';
 import type { WikiCitation } from '$lib/wiki/query/queryPipeline';
 import type { WikiCoverage } from '$lib/wiki/query/wikiSearch';
@@ -24,7 +24,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   const result = fileAnswerToWiki({
     db: getDb(),
     userId: locals.user?.id ?? DEFAULT_USER_ID,
-    baseDir: join(process.cwd(), 'data'),
+    baseDir: getDataDir(),
     question: body.question,
     answer: body.answer,
     citations: body.citations ?? [],
