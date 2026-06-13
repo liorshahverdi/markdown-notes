@@ -8,7 +8,7 @@ export interface RAGResult {
 
 export interface RAGConfig {
   ollamaUrl: string;         // default 'http://localhost:11434'
-  model: string;              // default 'llama3.2:3b'
+  model: string;              // default 'qwen2.5:3b'
   topK: number;               // default 5
   embeddingModel?: string;    // default 'nomic-embed-text'
 }

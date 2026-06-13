@@ -49,11 +49,12 @@ Expected behavior: answer from the note text in natural language. Graph links ma
 - [ ] Create notes with entities, tags, links, folders, and Mermaid diagrams.
 - [ ] Open `/graph`.
 - [ ] Verify nodes/edges render.
-- [ ] Select nodes/edges and verify detail/provenance is understandable.
+- [ ] Select nodes and verify detail/provenance is understandable.
+- [ ] Select edges and verify the edge drawer shows provenance, confidence/weight, extraction method, and source-note links.
+- [ ] Accept/reject an edge and verify unrelated edges are unchanged; rejected edges should leave the normal graph view.
 - [ ] Verify graph evidence helps chat find related notes.
-- [ ] If using the review queue, verify accept/reject actions work and are understandable.
 
-UX expectation: the review queue is experimental/advanced. The primary graph UX should be exploration and evidence, not mandatory review.
+UX expectation: the primary graph UX is exploration and evidence review; note any canvas selection discoverability or accessibility issues.
 
 ## 5. Skills
 

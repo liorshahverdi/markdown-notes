@@ -4,13 +4,13 @@
   import KnowledgeGraph from '$lib/components/KnowledgeGraph.svelte';
   import GraphControls from '$lib/components/GraphControls.svelte';
   import GraphDetailPanel from '$lib/components/GraphDetailPanel.svelte';
+  import GraphEdgeDetailDrawer from '$lib/components/GraphEdgeDetailDrawer.svelte';
   import GraphAnalyticsPanel from '$lib/components/GraphAnalytics.svelte';
   import ClusterQualityHeatmap from '$lib/components/ClusterQualityHeatmap.svelte';
   import ScoreBreakdown from '$lib/components/ScoreBreakdown.svelte';
   import GraphHealthIndicator from '$lib/components/GraphHealthIndicator.svelte';
   import ImprovementFeed from '$lib/components/ImprovementFeed.svelte';
   import TraceViewer from '$lib/components/TraceViewer.svelte';
-  import ReviewQueue from '$lib/components/ReviewQueue.svelte';
   import SkillCandidateCard from '$lib/components/SkillCandidateCard.svelte';
   import SkillGeneratorPanel from '$lib/components/SkillGeneratorPanel.svelte';
   import SkillList from '$lib/components/SkillList.svelte';
@@ -26,13 +26,15 @@
     graphEntities,
     graphRelations,
     selectedNodeId,
+    selectedEdgeId,
     loadGraphData,
     extractAndSaveEntities,
-    addRelation,
     removeRelation,
-    mergeGraphEntities,
     unmergeGraphEntities,
     rebuildGraph,
+    acceptRelation,
+    rejectRelation,
+    updateRelation,
   } from '$lib/stores/graph';
   import { notes, loadNotes, selectedNoteId } from '$lib/stores/notes';
   import {
@@ -50,11 +52,12 @@
   import { computeGraphHealth, type GraphHealthMetrics } from '$lib/graph/graphScorer';
   import { detectClusters } from '$lib/skills/clusterDetector';
   import type { Cluster } from '$lib/skills/clusterDetector';
-  import type { ImprovementRecord } from '$lib/graph/improvementLog';
+  import { dedupeImprovements, type ImprovementRecord } from '$lib/graph/improvementLog';
   import { createSelfImprover } from '$lib/graph/selfImprover';
   import { db } from '$lib/db/index';
   import type { GraphRelation } from '../../../types/graph';
-  import { generateSkillStream } from '$lib/skills/skillGenerator';
+  import { buildFocusedNodeSkillCluster, buildSkillPromptFromWizardEvidence, createEdgeWizardSource } from '$lib/skills/skillWizard';
+  import { generateSkillFromSelectionStream, generateSkillStream } from '$lib/skills/skillGenerator';
   import { ragConfig } from '$lib/stores/rag';
   import { traces, loadTraces } from '$lib/stores/traces';
   import { pruneOldTraces } from '$lib/graph/traceLogger';
@@ -62,6 +65,11 @@
   let selectedEntity = $derived(
     $selectedNodeId
       ? $graphEntities.find((e) => e.id === $selectedNodeId) ?? null
+      : null
+  );
+  let selectedEdge = $derived(
+    $selectedEdgeId
+      ? $graphRelations.find((r) => r.id === $selectedEdgeId) ?? null
       : null
   );
 
@@ -97,6 +105,7 @@
   let showSkillGenerator = $state(false);
   let aiSettingsOpen = $state(false);
   let generatedSkillMarkdown = $state('');
+  let edgeSkillDraft = $state<{ name: string; relation: GraphRelation; noteIds: string[] } | null>(null);
   let selectedCandidate = $state<(Cluster & { score: number }) | null>(null);
   let selectedCandidateBreakdown = $state<Record<string, number> | null>(null);
 
@@ -114,6 +123,12 @@
 
   function handleNodeClick(nodeId: string) {
     $selectedNodeId = nodeId;
+    $selectedEdgeId = null;
+  }
+
+  function handleEdgeClick(edgeId: string) {
+    $selectedEdgeId = edgeId;
+    $selectedNodeId = null;
   }
 
   function handleOpenNote(noteId: string) {
@@ -141,6 +156,7 @@
     // Show placeholder immediately while LLM generates
     generatedSkillMarkdown = `# ${cluster.name}\n\nGenerating skill from cluster with ${cluster.entityIds.length} entities and ${cluster.noteIds.length} notes...\n\n## Key Concepts\n\n${entityNames}\n`;
     showSkillGenerator = true;
+    edgeSkillDraft = null;
 
     // Call LLM to generate the full skill
     const clusterRelations = allRelations.filter(
@@ -165,13 +181,61 @@
     }
   }
 
+  async function handleGenerateFromEdge(edge: GraphRelation) {
+    const source = createEdgeWizardSource(edge, $graphEntities);
+    const from = $graphEntities.find((entity) => entity.id === edge.fromEntityId);
+    const to = $graphEntities.find((entity) => entity.id === edge.toEntityId);
+    const name = [from?.name, to?.name].filter(Boolean).join(' → ') || 'Graph Edge Skill';
+    const citedNoteIds = Array.from(new Set((edge.provenance ?? []).map((item) => item.noteId)));
+    generatedSkillMarkdown = `# ${name}\n\nGenerating skill from selected edge evidence...\n\n${buildSkillPromptFromWizardEvidence({
+      name,
+      source,
+      entities: $graphEntities,
+      relations: $graphRelations,
+      notes: $notes,
+    })}`;
+    edgeSkillDraft = {
+      name,
+      relation: edge,
+      noteIds: citedNoteIds,
+    };
+    selectedCandidate = null;
+    selectedCandidateBreakdown = null;
+    showSkillGenerator = true;
+
+    try {
+      generatingSkill.set(true);
+      for await (const snapshot of generateSkillFromSelectionStream({
+        name,
+        selectedEntityIds: source.selectedEntityIds,
+        selectedRelationIds: source.selectedRelationIds,
+        entities: $graphEntities,
+        relations: $graphRelations.filter((relation) => !relation.rejected),
+        notes: $notes,
+      }, $ragConfig)) {
+        generatedSkillMarkdown = snapshot;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      generatedSkillMarkdown = `# ${name}\n\n**Generation failed:** ${msg}\n\n## Evidence\n${edge.provenance?.map((item) => `- ${item.excerpt ?? 'No excerpt'} [${item.method}]`).join('\n') ?? '- No provenance captured.'}`;
+    } finally {
+      generatingSkill.set(false);
+    }
+  }
+
   async function handleGenerateFromSelection() {
     if (!$selectedNodeId) return;
-    // Find the cluster containing the selected node
-    const clusters = detectClusters($graphEntities, $graphRelations);
-    const cluster = clusters.find((c) => c.entityIds.includes($selectedNodeId!));
-    if (cluster) {
-      await handleGenerateSkill(cluster);
+
+    // Generate from a focused ego-subgraph around the selected node rather than
+    // the full connected component. Full clusters can be polluted by shared tags
+    // or generic bridge nodes and produce irrelevant skills.
+    const focusedCluster = buildFocusedNodeSkillCluster({
+      selectedEntityId: $selectedNodeId,
+      entities: $graphEntities,
+      relations: $graphRelations,
+    });
+    if (focusedCluster) {
+      await handleGenerateSkill(focusedCluster);
     }
   }
 
@@ -193,20 +257,41 @@
         updatedAt: Date.now(),
       };
       await saveSkill(skill);
+    } else if (edgeSkillDraft) {
+      const now = Date.now();
+      const skill = {
+        id: `skill-${now}`,
+        name: edgeSkillDraft.name,
+        domain: 'graph-edge',
+        type: 'single' as const,
+        content: markdown,
+        sourceNoteIds: edgeSkillDraft.noteIds,
+        parentSkillIds: [],
+        dependencies: { requires: [], enhances: [] },
+        confidence: edgeSkillDraft.relation.confidence != null && edgeSkillDraft.relation.confidence >= 0.75 ? 'high' as const : 'medium' as const,
+        versions: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      await saveSkill(skill);
     }
     selectedCandidate = null;
+    edgeSkillDraft = null;
     selectedCandidateBreakdown = null;
   }
 
   function handleRejectSkill() {
     showSkillGenerator = false;
     selectedCandidate = null;
+    edgeSkillDraft = null;
     selectedCandidateBreakdown = null;
   }
 
   function handleRegenerateSkill() {
     if (selectedCandidate) {
       handleGenerateSkill(selectedCandidate);
+    } else if (edgeSkillDraft) {
+      handleGenerateFromEdge(edgeSkillDraft.relation);
     }
   }
 
@@ -233,6 +318,7 @@
 
     // Use the combined prompt through the RAG pipeline if available
     selectedCandidate = null;
+    edgeSkillDraft = null;
     selectedCandidateBreakdown = null;
 
     try {
@@ -291,85 +377,55 @@
     }
   }
 
-  // Pending-review items for ReviewQueue
-  let pendingReviewItems = $derived(
-    improvements.filter((r) => r.status === 'pending-review')
-  );
-
-  async function handleApproveImprovement(record: ImprovementRecord) {
-    const updated: ImprovementRecord = { ...record, status: 'auto-applied' };
-    improvements = improvements.map((r) => (r.id === record.id ? updated : r));
-
-    try {
-      if (record.type === 'relationship_added' || record.type === 'transitive_inferred' || record.type === 'implicit_extracted') {
-        const undoData = record.undoData as { relation: GraphRelation };
-        await addRelation(undoData.relation);
-      } else if (record.type === 'entity_merged') {
-        const undoData = record.undoData as { keepId: string; removeId: string };
-        await mergeGraphEntities(undoData.keepId, undoData.removeId);
-      }
-      recomputeAnalytics();
-    } catch (e) {
-      console.warn('[ReviewQueue] approve failed:', e);
-    }
-    try {
-      await db.improvements.put(updated);
-    } catch {}
-  }
-
-  async function handleRejectImprovement(record: ImprovementRecord) {
-    const updated: ImprovementRecord = { ...record, status: 'rejected' };
-    improvements = improvements.map((r) => (r.id === record.id ? updated : r));
-    try {
-      await db.improvements.put(updated);
-    } catch {}
-  }
-
   let improver: ReturnType<typeof createSelfImprover> | null = null;
 
   async function handleSyncNotes() {
     if (syncing) return;
     syncing = true;
+    let syncCompleted = false;
     try {
       for (const note of $notes) {
         await extractAndSaveEntities(note.id, note.title, note.content, note.folderId);
       }
       recomputeAnalytics();
       lastSyncedAt = Date.now();
-
-      // Run self-improvement analysis after sync
-      const rc = $ragConfig;
-      let siEnabled = true;
-      let siInterval = 30 * 60 * 1000;
-      let siThreshold = 0.8;
-      try {
-        const saved = localStorage.getItem('app-settings');
-        if (saved) {
-          const s = JSON.parse(saved);
-          siEnabled = s.selfImprovementEnabled ?? true;
-          siInterval = (s.selfImprovementInterval ?? 30) * 60 * 1000;
-          siThreshold = s.autoApplyThreshold ?? 0.8;
-        }
-      } catch {}
-      improver = createSelfImprover({
-        enabled: siEnabled,
-        intervalMs: siInterval,
-        autoApplyThreshold: siThreshold,
-        ollamaUrl: rc.ollamaUrl || undefined,
-        ollamaModel: rc.model || undefined,
-        onImprove(records) {
-          improvements = [...improvements, ...records];
-          recomputeAnalytics();
-        },
-      });
-      try {
-        await improver.runOnce();
-      } catch (e) {
-        console.error('[SelfImprover] runOnce failed:', e);
-      }
+      syncCompleted = true;
     } finally {
+      // Keep the sync button tied only to deterministic extraction. Self-improvement
+      // can call Ollama and should not leave the graph operations UI disabled.
       syncing = false;
     }
+
+    if (!syncCompleted) return;
+
+    // Run self-improvement analysis after sync in the background.
+    const rc = $ragConfig;
+    let siEnabled = true;
+    let siInterval = 30 * 60 * 1000;
+    let siThreshold = 0.8;
+    try {
+      const saved = localStorage.getItem('app-settings');
+      if (saved) {
+        const s = JSON.parse(saved);
+        siEnabled = s.selfImprovementEnabled ?? true;
+        siInterval = (s.selfImprovementInterval ?? 30) * 60 * 1000;
+        siThreshold = s.autoApplyThreshold ?? 0.8;
+      }
+    } catch {}
+    improver = createSelfImprover({
+      enabled: siEnabled,
+      intervalMs: siInterval,
+      autoApplyThreshold: siThreshold,
+      ollamaUrl: rc.ollamaUrl || undefined,
+      ollamaModel: rc.model || undefined,
+      onImprove(records) {
+        improvements = dedupeImprovements([...improvements, ...records]);
+        recomputeAnalytics();
+      },
+    });
+    void improver.runOnce().catch((e) => {
+      console.error('[SelfImprover] runOnce failed:', e);
+    });
   }
 
   async function handleRebuildGraph() {
@@ -401,9 +457,9 @@
     let allImprovements: ImprovementRecord[] = [];
     try {
       const raw = await db.improvements.toArray();
-      allImprovements = raw.filter((r): r is ImprovementRecord =>
+      allImprovements = dedupeImprovements(raw.filter((r): r is ImprovementRecord =>
         typeof r.description === 'string' && Array.isArray(r.affectedIds)
-      );
+      ));
     } catch {
       // DB not ready or schema mismatch
     }
@@ -491,7 +547,7 @@
               type="text"
               value={$ragConfig.model}
               oninput={(e) => $ragConfig = { ...$ragConfig, model: e.currentTarget.value }}
-              placeholder="llama3.2:3b"
+              placeholder="qwen2.5:3b"
               class="kg-input"
             />
           </label>
@@ -512,6 +568,7 @@
         nodes={$graphNodes}
         edges={$graphEdges}
         onNodeClick={handleNodeClick}
+        onEdgeClick={handleEdgeClick}
       />
     </div>
 
@@ -550,24 +607,28 @@
 
   <!-- Right sidebar: detail panel + self-improvement -->
   <aside class="kg-aside kg-aside--right">
-    <GraphDetailPanel
-      entity={selectedEntity}
-      relations={$graphRelations}
-      allEntities={$graphEntities}
-      {improvements}
-      traces={$traces}
-      onOpenNote={handleOpenNote}
-    />
-
-    {#if pendingReviewItems.length > 0}
+    {#if selectedEdge}
       <section class="kg-panel">
-        <h3 class="kg-panel__title">Review queue</h3>
-        <ReviewQueue
-          items={pendingReviewItems}
-          onApprove={handleApproveImprovement}
-          onReject={handleRejectImprovement}
+        <GraphEdgeDetailDrawer
+          edge={selectedEdge}
+          entities={$graphEntities}
+          notes={$notes}
+          onOpenNote={handleOpenNote}
+          onAccept={(edge) => acceptRelation(edge.id)}
+          onReject={(edge) => rejectRelation(edge.id)}
+          onEdit={(edge, patch) => updateRelation(edge.id, patch)}
+          onGenerateSkill={(edge) => handleGenerateFromEdge(edge)}
         />
       </section>
+    {:else}
+      <GraphDetailPanel
+        entity={selectedEntity}
+        relations={$graphRelations}
+        allEntities={$graphEntities}
+        {improvements}
+        traces={$traces}
+        onOpenNote={handleOpenNote}
+      />
     {/if}
 
     <section class="kg-panel">

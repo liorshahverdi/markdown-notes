@@ -24,6 +24,13 @@ export interface RelationRecord {
   toEntityId: string;
   type: string;
   weight: number;
+  confidence?: number;
+  provenance?: Array<{ noteId: string; excerpt?: string; method: string }>;
+  accepted?: boolean;
+  rejected?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+  metadata?: Record<string, unknown>;
 }
 
 export interface SkillRecord {

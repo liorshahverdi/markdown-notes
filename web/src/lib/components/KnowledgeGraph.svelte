@@ -7,9 +7,10 @@
     nodes: GraphNode[];
     edges: GraphEdge[];
     onNodeClick: (nodeId: string) => void;
+    onEdgeClick?: (edgeId: string) => void;
   }
 
-  let { nodes, edges, onNodeClick }: Props = $props();
+  let { nodes, edges, onNodeClick, onEdgeClick }: Props = $props();
 
   let container: HTMLDivElement;
   let network: any = null;
@@ -87,6 +88,8 @@
     network.on('click', (params: any) => {
       if (params.nodes.length > 0) {
         onNodeClick(params.nodes[0]);
+      } else if (params.edges.length > 0) {
+        onEdgeClick?.(params.edges[0]);
       }
     });
   }

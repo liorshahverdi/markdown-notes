@@ -74,7 +74,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
   const config = {
     ollamaUrl,
-    model: body.model || 'llama3.2:3b',
+    model: body.model || 'qwen2.5:3b',
     topK: 5,
   };
 

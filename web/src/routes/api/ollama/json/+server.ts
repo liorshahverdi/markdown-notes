@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
-const DEFAULT_MODEL = 'llama3.2:3b';
+const DEFAULT_MODEL = 'qwen2.5:3b';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 export const POST: RequestHandler = async ({ request }) => {

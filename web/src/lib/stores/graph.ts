@@ -19,10 +19,28 @@ export const graphRelations = writable<GraphRelation[]>([]);
 export const graphNodes = writable<GraphNode[]>([]);
 export const graphEdges = writable<GraphEdge[]>([]);
 export const selectedNodeId = writable<string | null>(null);
+export const selectedEdgeId = writable<string | null>(null);
 export const entityTypeFilter = writable<Set<string>>(
   new Set(['note', 'Person', 'Object', 'Location', 'Event', 'Other', 'folder'])
 );
 export const graphSearchText = writable<string>('');
+
+function persistableRelation(relation: GraphRelation) {
+  return {
+    id: relation.id,
+    fromEntityId: relation.fromEntityId,
+    toEntityId: relation.toEntityId,
+    type: relation.type,
+    weight: relation.weight ?? 1,
+    confidence: relation.confidence,
+    provenance: relation.provenance,
+    accepted: relation.accepted,
+    rejected: relation.rejected,
+    createdAt: relation.createdAt,
+    updatedAt: relation.updatedAt,
+    metadata: relation.metadata,
+  };
+}
 
 function rebuildVisData(entities: GraphEntity[], relations: GraphRelation[]): void {
   const filter = get(entityTypeFilter);
@@ -96,6 +114,22 @@ function titleKeywords(title: string): Set<string> {
       .filter((w) => w.length > 2 && !TITLE_STOPWORDS.has(w))
       // Remove date-like tokens (e.g., "4/1/2026", "2026")
       .filter((w) => !/^\d+$/.test(w))
+  );
+}
+
+function relationExcerpt(content: string, fromName: string, toName: string, explicit?: string): string {
+  if (explicit) return explicit;
+  const normalizedFrom = fromName.trim().toLowerCase();
+  const normalizedTo = toName.trim().toLowerCase();
+  const lines = content.split('\n').map((line) => line.trim()).filter(Boolean);
+  return (
+    lines.find((line) => {
+      const lower = line.toLowerCase();
+      return lower.includes(normalizedFrom) && lower.includes(normalizedTo);
+    }) ??
+    lines.find((line) => line.toLowerCase().includes(normalizedFrom)) ??
+    lines.find((line) => line.toLowerCase().includes(normalizedTo)) ??
+    content.slice(0, 240)
   );
 }
 
@@ -220,6 +254,13 @@ export async function loadGraphData(): Promise<void> {
     toEntityId: rr.toEntityId,
     type: (rr.type || 'mentions') as GraphRelation['type'],
     weight: rr.weight ?? 1,
+    confidence: rr.confidence,
+    provenance: rr.provenance as GraphRelation['provenance'],
+    accepted: rr.accepted,
+    rejected: rr.rejected,
+    createdAt: rr.createdAt,
+    updatedAt: rr.updatedAt,
+    metadata: rr.metadata,
   }));
 
   graphEntities.set(entities);
@@ -333,29 +374,58 @@ export async function extractAndSaveEntities(
     const toId = (toKey ? entityIdMap.get(toKey) : undefined) ?? entityIdByName.get(rel.toName.toLowerCase());
 
     if (fromId && toId) {
+      const provenance = {
+        noteId,
+        excerpt: relationExcerpt(content, rel.fromName, rel.toName, rel.excerpt),
+        method: rel.method ?? 'regex' as const,
+      };
+
       // Check if this exact relation already exists (compound index lookup)
       const existing = await db.relations
         .where('[fromEntityId+toEntityId+type]')
         .equals([fromId, toId, rel.type])
         .first();
-      if (existing) continue;
+      if (existing) {
+        const existingProvenance = existing.provenance ?? [];
+        const alreadyCaptured = existingProvenance.some(
+          (item) => item.noteId === provenance.noteId && item.excerpt === provenance.excerpt
+        );
+        const enriched: GraphRelation = {
+          id: existing.id,
+          fromEntityId: existing.fromEntityId,
+          toEntityId: existing.toEntityId,
+          type: existing.type as GraphRelation['type'],
+          weight: existing.weight ?? 1,
+          confidence: existing.confidence ?? rel.confidence,
+          accepted: existing.accepted ?? rel.method !== 'llm',
+          rejected: existing.rejected ?? false,
+          createdAt: existing.createdAt ?? Date.now(),
+          updatedAt: Date.now(),
+          provenance: alreadyCaptured ? existingProvenance as GraphRelation['provenance'] : [...existingProvenance, provenance] as GraphRelation['provenance'],
+          metadata: existing.metadata,
+        };
+        await db.relations.put(persistableRelation(enriched));
+        graphRelations.update((current) => current.map((item) => (item.id === enriched.id ? enriched : item)));
+        continue;
+      }
 
+      const timestamp = Date.now();
       const relation: GraphRelation = {
         id: uuidv4(),
         fromEntityId: fromId,
         toEntityId: toId,
         type: rel.type,
         weight: 1,
+        confidence: rel.confidence,
+        accepted: rel.method !== 'llm',
+        rejected: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        provenance: [provenance],
       };
       graphRelationList.push(relation);
 
-      await db.relations.put({
-        id: relation.id,
-        fromEntityId: relation.fromEntityId,
-        toEntityId: relation.toEntityId,
-        type: relation.type,
-        weight: relation.weight ?? 1,
-      });
+      await db.relations.put(persistableRelation(relation));
     }
   }
 
@@ -380,21 +450,28 @@ export async function extractAndSaveEntities(
           .equals([fromId, toId, 'mentions'])
           .first();
         if (!existing) {
+          const timestamp = Date.now();
           const relation: GraphRelation = {
             id: uuidv4(),
             fromEntityId: fromId,
             toEntityId: toId,
             type: 'mentions',
             weight: 0.8,
+            confidence: 0.8,
+            accepted: true,
+            rejected: false,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            provenance: [
+              {
+                noteId,
+                excerpt: relationExcerpt(content, title, entity.name),
+                method: 'regex',
+              },
+            ],
           };
           graphRelationList.push(relation);
-          await db.relations.put({
-            id: relation.id,
-            fromEntityId: relation.fromEntityId,
-            toEntityId: relation.toEntityId,
-            type: relation.type,
-            weight: relation.weight ?? 1,
-          });
+          await db.relations.put(persistableRelation(relation));
         }
       }
     }
@@ -425,14 +502,33 @@ export async function extractAndSaveEntities(
 
 export async function addRelation(relation: GraphRelation): Promise<void> {
   graphRelations.update((current) => [...current, relation]);
-  await db.relations.put({
-    id: relation.id,
-    fromEntityId: relation.fromEntityId,
-    toEntityId: relation.toEntityId,
-    type: relation.type,
-    weight: relation.weight ?? 1,
-  });
+  await db.relations.put(persistableRelation(relation));
   rebuildVisData(get(graphEntities), get(graphRelations));
+}
+
+export async function updateRelation(relationId: string, patch: Partial<GraphRelation>): Promise<void> {
+  let updatedRelation: GraphRelation | undefined;
+  graphRelations.update((current) =>
+    current.map((relation) => {
+      if (relation.id !== relationId) return relation;
+      updatedRelation = { ...relation, ...patch, id: relation.id, updatedAt: Date.now() };
+      return updatedRelation;
+    })
+  );
+
+  if (updatedRelation) {
+    await db.relations.put(persistableRelation(updatedRelation));
+    rebuildVisData(get(graphEntities), get(graphRelations));
+  }
+}
+
+export async function acceptRelation(relationId: string): Promise<void> {
+  await updateRelation(relationId, { accepted: true, rejected: false });
+}
+
+export async function rejectRelation(relationId: string): Promise<void> {
+  await updateRelation(relationId, { accepted: false, rejected: true });
+  if (get(selectedEdgeId) === relationId) selectedEdgeId.set(null);
 }
 
 export async function removeRelation(relationId: string): Promise<void> {

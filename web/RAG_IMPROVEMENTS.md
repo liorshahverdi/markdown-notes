@@ -60,13 +60,13 @@ Important current rule: graph links help retrieval and context, but note text mu
 
 ### 1. Improve graph UI/UX
 
-The review queue is currently underused. The graph page should prioritize exploration and evidence:
+The graph page should continue prioritizing exploration and evidence:
 
-- search/filter graph nodes and relation types
-- show clear edge provenance and note excerpts
+- improve search/filter controls for graph nodes and relation types
+- keep edge provenance, note excerpts, and extraction methods visible in the edge detail drawer
 - explain why each edge exists
 - let users ask chat about selected graph items
-- make review queue contextual rather than primary
+- add accessible non-canvas fallbacks for selecting nodes and edges
 
 ### 2. Persist/cold-start optimization
 

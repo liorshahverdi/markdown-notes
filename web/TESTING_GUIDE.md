@@ -51,7 +51,7 @@ Prerequisite for local-model fallback:
 
 ```bash
 ollama serve
-ollama pull llama3.2:3b
+ollama pull qwen2.5:3b
 ollama pull nomic-embed-text
 ```
 
@@ -83,11 +83,13 @@ Expected behavior: answer from note text first; graph links can support retrieva
 - [ ] Create notes with entities, tags, wikilinks, folders, and Mermaid diagrams.
 - [ ] Open `/graph`.
 - [ ] Verify graph nodes/edges are visible.
-- [ ] Verify graph detail/provenance panels explain where edges came from.
+- [ ] Select graph nodes and verify the detail panel explains connected evidence.
+- [ ] Select graph edges and verify the edge detail drawer shows provenance, confidence/weight, extraction method, and source-note links.
+- [ ] Accept/reject a low-confidence or model-inferred edge and verify unrelated edges are not mutated; rejected edges should disappear from the normal graph view.
+- [ ] Generate a skill from a selected edge and verify the draft is grounded in that edge's cited evidence.
 - [ ] Verify graph links improve chat retrieval when a question references a connected note/entity.
-- [ ] Treat the review queue as experimental. If used, verify low-confidence/model-inferred edges can be accepted/rejected without mutating unrelated edges.
 
-UX note: review queue is currently underused and should not be treated as the primary graph workflow until the graph page is redesigned around exploration, evidence, and review.
+UX note: edge selection is canvas-based; if validating manually, capture any discoverability/accessibility issues for follow-up.
 
 ---
 

@@ -145,6 +145,15 @@ const SKILL_READ_TIMEOUT_MS = 180_000;
  * Stream skill generation token-by-token.
  * Caller can update the UI on each yielded string (accumulated result so far).
  */
+async function* streamSkillPrompt(prompt: string, config: RAGConfig): AsyncGenerator<string> {
+  let result = '';
+
+  for await (const token of queryOllama(prompt, config, undefined, SKILL_FETCH_TIMEOUT_MS, SKILL_READ_TIMEOUT_MS)) {
+    result += token;
+    yield result;
+  }
+}
+
 export async function* generateSkillStream(
   cluster: Cluster,
   notes: Array<{ title: string; content: string }>,
@@ -152,13 +161,14 @@ export async function* generateSkillStream(
   relations: GraphRelation[],
   config: RAGConfig
 ): AsyncGenerator<string> {
-  const prompt = buildSkillPrompt(cluster, notes, entities, relations);
-  let result = '';
+  yield* streamSkillPrompt(buildSkillPrompt(cluster, notes, entities, relations), config);
+}
 
-  for await (const token of queryOllama(prompt, config, undefined, SKILL_FETCH_TIMEOUT_MS, SKILL_READ_TIMEOUT_MS)) {
-    result += token;
-    yield result;
-  }
+export async function* generateSkillFromSelectionStream(
+  input: SkillSelectionInput,
+  config: RAGConfig
+): AsyncGenerator<string> {
+  yield* streamSkillPrompt(buildSkillPromptFromSelection(input), config);
 }
 
 /** Non-streaming convenience wrapper. */

@@ -23,7 +23,7 @@
 
 	// RAG settings
 	let ollamaUrl = $state('http://localhost:11434');
-	let ollamaModel = $state('llama3.2:3b');
+	let ollamaModel = $state('qwen2.5:3b');
 	let embeddingModel = $state('nomic-embed-text');
 	let topK = $state(5);
 	let ollamaSettingsStatus = $state<'disconnected' | 'checking' | 'connected'>('disconnected');
@@ -283,7 +283,7 @@
 								bind:value={ollamaModel}
 								onchange={saveRagSettings}
 								class="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-								placeholder="llama3.2:3b"
+								placeholder="qwen2.5:3b"
 							/>
 						</div>
 

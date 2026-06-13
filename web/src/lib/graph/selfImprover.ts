@@ -7,7 +7,7 @@
 import { get } from 'svelte/store';
 import { v4 as uuidv4 } from 'uuid';
 import type { ImprovementRecord } from './improvementLog';
-import { createImprovement } from './improvementLog';
+import { createImprovement, dedupeImprovements, improvementDedupeKey } from './improvementLog';
 import { graphEntities, graphRelations, addRelation, mergeGraphEntities } from '../stores/graph';
 import { notes } from '../stores/notes';
 import { db } from '../db/index';
@@ -60,6 +60,11 @@ export function createSelfImprover(config?: Partial<SelfImproverConfig>): {
       existingImprovements
         .filter((r) => Array.isArray(r.affectedIds) && r.affectedIds.length > 0)
         .map((r) => [...r.affectedIds].sort().join('::'))
+    );
+    const existingImprovementKeys = new Set(
+      existingImprovements
+        .filter((r) => Array.isArray(r.affectedIds))
+        .map((r) => improvementDedupeKey(r))
     );
 
     // Helper: resolve shared note IDs to titles for descriptions
@@ -206,7 +211,7 @@ export function createSelfImprover(config?: Partial<SelfImproverConfig>): {
             );
             const result = await queryOllamaJSON(prompt, {
               ollamaUrl: resolvedConfig.ollamaUrl!,
-              ollamaModel: resolvedConfig.ollamaModel ?? 'llama3.2:3b',
+              ollamaModel: resolvedConfig.ollamaModel ?? 'qwen2.5:3b',
             });
             if (!result) {
               tracer.addDecision({ action: 'rejected', subject: `Validate entities in "${note.title}"`, reason: 'LLM returned no response — model may be unavailable' });
@@ -272,7 +277,7 @@ export function createSelfImprover(config?: Partial<SelfImproverConfig>): {
             const prompt = buildImplicitExtractionPrompt(note.title, note.content, knownNames);
             const result = await queryOllamaJSON<unknown[]>(prompt, {
               ollamaUrl: resolvedConfig.ollamaUrl!,
-              ollamaModel: resolvedConfig.ollamaModel ?? 'llama3.2:3b',
+              ollamaModel: resolvedConfig.ollamaModel ?? 'qwen2.5:3b',
             });
             if (!result) {
               tracer.addDecision({ action: 'rejected', subject: `Analyze "${note.title}"`, reason: 'LLM returned no response — model may be unavailable' });
@@ -338,8 +343,11 @@ export function createSelfImprover(config?: Partial<SelfImproverConfig>): {
     tracer.endStage({ implicitLinks: records.filter((r) => r.type === 'implicit_extracted').length });
 
     // 6. Auto-apply only records above threshold; persist all (including pending-review)
+    const uniqueNewRecords = dedupeImprovements(records).filter(
+      (record) => !existingImprovementKeys.has(improvementDedupeKey(record))
+    );
     const applied: ImprovementRecord[] = [];
-    for (const record of records) {
+    for (const record of uniqueNewRecords) {
       if (record.status === 'auto-applied') {
         try {
           if (record.type === 'relationship_added' || record.type === 'transitive_inferred' || record.type === 'implicit_extracted') {

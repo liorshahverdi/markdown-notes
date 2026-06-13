@@ -12,7 +12,7 @@ import { buildWikiFirstQueryContext } from '$lib/wiki/query/queryPipeline';
 import type { FolderRecord, NoteRecord } from '../../../types/note';
 
 const DEFAULT_TOP_K = 5;
-const DEFAULT_MODEL = 'llama3.2:3b';
+const DEFAULT_MODEL = 'qwen2.5:3b';
 const DEFAULT_USER_ID = 'user-1';
 const INSUFFICIENT_EVIDENCE_RESPONSE = 'I do not have enough evidence in your notes or graph to answer that directly.';
 const SEARCHING_MEMORY_STATUS = 'Searching your notes and graph…\n\n';

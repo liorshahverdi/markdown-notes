@@ -40,9 +40,9 @@ The graph is built from notes, links, tags, folders, Mermaid diagrams, extracted
 - note/detail context
 - chat memory retrieval expansion
 - skill candidate generation
-- low-confidence/model-inferred edge review helpers
+- low-confidence/model-inferred edge review through the edge detail drawer
 
-The review queue exists, but it is not yet a primary workflow. Treat it as an advanced/experimental surface until the graph UI is redesigned around evidence and review.
+Select an edge in the graph to inspect its provenance, accept/reject the relation, edit its relationship type, or draft a skill from that cited evidence.
 
 ### Chat memory
 
@@ -118,7 +118,7 @@ npm run dev
 Optional local models:
 
 ```bash
-ollama pull llama3.2:3b
+ollama pull qwen2.5:3b
 ollama pull nomic-embed-text
 ollama serve
 ```
@@ -156,7 +156,7 @@ See `TESTING_GUIDE.md` for manual and automated acceptance guidance.
 src/
 ├── lib/
 │   ├── components/       # editor, chat, graph, skill, wiki/maintenance UI
-│   ├── graph/            # extraction, scoring, review, provenance, inference helpers
+│   ├── graph/            # extraction, scoring, provenance, inference helpers
 │   ├── memory/           # notes+graph chat retrieval and synthesized recall
 │   ├── server/           # auth, database, vault, graph snapshot, note file helpers
 │   ├── stores/           # Svelte stores for notes, folders, graph, chat, rag config
@@ -177,4 +177,4 @@ src/
 - Exposing the app as a hardened multi-user production service.
 - Treating generated wiki pages as the default source of truth.
 - Returning ungrounded chat answers when notes/graph evidence is missing.
-- Making the review queue the primary graph UX before the graph exploration flow is redesigned.
+- Treating unreviewed or rejected graph edges as authoritative evidence.

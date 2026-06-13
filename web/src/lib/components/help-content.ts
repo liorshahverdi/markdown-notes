@@ -233,7 +233,7 @@ You can ask about a specific note by including its title in your query (e.g., "s
 RAG requires an Ollama instance for the language model. Ollama runs on the **server** — all AI requests are proxied through the app server, so you can access the app from any device on your network without needing Ollama installed locally on each device.
 
 1. Install Ollama on the **server** from [ollama.ai](https://ollama.ai)
-2. Pull a model: \`ollama pull llama3.2\` (or another supported model)
+2. Pull a model: \`ollama pull qwen2.5:3b\` (or another supported model)
 3. Start Ollama: \`ollama serve\` (runs on port 11434 by default)
 4. The green/red status dot in the nav bar shows whether Ollama is connected
 
@@ -247,7 +247,7 @@ The app proxies all Ollama calls through the server (\`/api/ollama/*\` endpoints
 
 ### Model Selection
 
-In Settings, you can choose which Ollama model to use. Smaller models (e.g., \`llama3.2:3b\`) are faster but less capable. Larger models provide better quality but require more resources.
+In Settings, you can choose which Ollama model to use. Smaller models (e.g., \`qwen2.5:3b\` or \`llama3.2:3b\`) are faster but less capable. Larger models provide better quality but require more resources.
 
 ### Asking Good Questions
 
@@ -312,7 +312,7 @@ The self-improvement loop runs five analysis stages:
 2. **Entity deduplication**: Detects near-duplicate entities (e.g., "Dr. Smith" and "Smith") and proposes merging them
 3. **Entity validation** (requires Ollama): Uses the LLM to verify that extracted entity types are correct (e.g., "AMS" classified as Organization, not Topic)
 4. **Implicit extraction** (requires Ollama): Uses the LLM to discover relationships that aren't explicitly stated but are implied in the text
-5. **Auto-apply / review**: High-confidence proposals (above the threshold) are applied automatically; lower-confidence ones go to the review queue
+5. **Auto-apply / evidence review**: High-confidence proposals (above the threshold) are applied automatically; lower-confidence relationship evidence can be inspected and accepted/rejected from the edge detail drawer
 
 ### Background Loop
 
@@ -329,17 +329,18 @@ Every self-improvement run (as well as chat queries and entity extractions) prod
 
 Click a trace to expand its stages, then click a stage to see individual decisions.
 
-### Review Queue
+### Edge Evidence Review
 
-When the system discovers new entities or relationships below the auto-apply threshold, they appear in the review queue. For each proposed change, you can:
+Select a relationship edge in the Knowledge Graph to open its evidence drawer. For each edge, you can:
 
-- **Approve**: Add the entity or relationship to the graph
-- **Reject**: Discard the proposal
-- **Edit**: Modify the proposal before approving
+- **Accept**: Mark the relationship as reviewed and trusted
+- **Reject**: Hide the relationship from the normal graph view
+- **Edit**: Adjust the relationship type
+- **Generate skill**: Draft a skill from the edge's cited source notes and provenance
 
 ### Undo Changes
 
-If an approved change turns out to be incorrect, you can undo it from the graph detail panel. Select the node or edge and use the undo option to revert the change.
+If an approved change turns out to be incorrect, you can undo supported self-improvement records from the graph detail panel, or reject an incorrect relationship edge from the edge evidence drawer.
 
 ### Configuration
 
@@ -440,7 +441,7 @@ mdnotes create "My New Note" --file ./draft.md
 #### Query (RAG)
 \`\`\`bash
 mdnotes query "What do I know about React?"
-mdnotes query "Summarize my project notes" --model llama3.2
+mdnotes query "Summarize my project notes" --model qwen2.5:3b
 \`\`\`
 
 #### Export
@@ -481,7 +482,7 @@ All configurable options for MarkdownNotes.
 
 ### Self-Improvement
 - **Enable self-improvement**: Toggle the hourly background self-improvement loop. When enabled, the system analyzes your knowledge graph every hour for new relationships, duplicates, and LLM-powered improvements.
-- **Auto-apply threshold**: Confidence level (0.50 - 1.00) above which proposals are applied automatically. Lower values = more aggressive auto-application. Higher values = more items go to the review queue for manual approval.`,
+- **Auto-apply threshold**: Confidence level (0.50 - 1.00) above which proposals are applied automatically. Lower values = more aggressive auto-application. Higher values = more proposals remain available for manual evidence review.`,
 		keywords: ['settings', 'configuration', 'options', 'dark mode', 'font', 'tab', 'vim', 'ollama', 'endpoint', 'theme', 'self-improvement', 'threshold', 'proxy']
 	},
 	{

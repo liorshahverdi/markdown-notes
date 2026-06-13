@@ -26,6 +26,37 @@ export function createImprovement(
   };
 }
 
+function relationEndpointKey(record: ImprovementRecord): string | null {
+  const relation = (record.undoData as { relation?: { fromEntityId?: string; toEntityId?: string } } | undefined)?.relation;
+  if (!relation?.fromEntityId || !relation?.toEntityId) return null;
+  return [relation.fromEntityId, relation.toEntityId].sort().join('::');
+}
+
+export function improvementDedupeKey(record: ImprovementRecord): string {
+  const relationPair = relationEndpointKey(record);
+  if (relationPair && (
+    record.type === 'relationship_added' ||
+    record.type === 'implicit_extracted' ||
+    record.type === 'transitive_inferred'
+  )) {
+    return `${record.type}:${relationPair}`;
+  }
+
+  return `${record.type}:${[...record.affectedIds].sort().join('::')}:${record.description.toLowerCase().trim()}`;
+}
+
+export function dedupeImprovements(records: ImprovementRecord[]): ImprovementRecord[] {
+  const byKey = new Map<string, ImprovementRecord>();
+  for (const record of records) {
+    const key = improvementDedupeKey(record);
+    const existing = byKey.get(key);
+    if (!existing || record.timestamp >= existing.timestamp) {
+      byKey.set(key, record);
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => b.timestamp - a.timestamp);
+}
+
 export function canUndo(record: ImprovementRecord): boolean {
   if (!record.undoData) return false;
   if (record.status === 'rejected') return false;

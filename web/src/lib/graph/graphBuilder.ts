@@ -19,9 +19,14 @@ export const NODE_COLORS: Record<EntityType, string> = {
 const BASE_NODE_SIZE = 15;
 const SIZE_PER_SOURCE = 2;
 
+export interface BuildGraphDataOptions {
+  includeRejected?: boolean;
+}
+
 export function buildGraphData(
   entities: GraphEntity[],
-  relations: GraphRelation[]
+  relations: GraphRelation[],
+  options: BuildGraphDataOptions = {}
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = entities.map((entity) => {
     const subtypeLabel = entity.subtype ? ` (${entity.subtype})` : '';
@@ -34,7 +39,11 @@ export function buildGraphData(
     };
   });
 
-  const edges: GraphEdge[] = relations.map((relation) => ({
+  const visibleRelations = options.includeRejected
+    ? relations
+    : relations.filter((relation) => !relation.rejected);
+
+  const edges: GraphEdge[] = visibleRelations.map((relation) => ({
     id: relation.id,
     from: relation.fromEntityId,
     to: relation.toEntityId,

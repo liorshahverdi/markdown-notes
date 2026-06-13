@@ -9,7 +9,7 @@ export const ollamaStatus = writable<'connected' | 'disconnected' | 'checking'>(
 
 export const ragConfig = writable<RAGConfig>({
   ollamaUrl: 'http://localhost:11434',
-  model: 'llama3.2:3b',
+  model: 'qwen2.5:3b',
   topK: 3,
   embeddingModel: 'nomic-embed-text',
 });

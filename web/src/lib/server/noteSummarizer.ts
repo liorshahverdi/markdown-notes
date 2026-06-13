@@ -7,7 +7,7 @@
 import { updateNoteSummary } from './notesFile';
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
-const DEFAULT_MODEL = 'llama3.2:3b';
+const DEFAULT_MODEL = 'qwen2.5:3b';
 const TIMEOUT_MS = 30_000;
 
 /** Debounce map: noteId -> timer, so rapid saves don't spam Ollama */
