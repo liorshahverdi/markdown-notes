@@ -1,183 +1,135 @@
-# MarkdownNotes Testing Guide
+# MarkdownNotes Web Testing Guide
 
-This guide focuses on the current product direction: an LLM-maintained local wiki backed by immutable raw sources, generated markdown wiki pages, wiki-first query, answer filing, wiki lint, and legacy note migration.
+This guide reflects the current note-first app state. Default chat is notes + graph memory. The source/wiki subsystem is experimental and opt-in.
 
----
+## 1. Automated checks
 
-## 1. Automated test suite
-
-Use Node.js 22+ for the web app.
+Use Node.js 22+.
 
 ```bash
 cd web
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npm run check
+npm run check
+npm test
+npm run build
 ```
 
-Useful targeted commands:
+Targeted suites:
 
 ```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/server/vaultPaths.test.ts src/lib/server/vaultFrontmatter.test.ts src/lib/server/vaultFs.test.ts
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/ingest
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/query
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/lint
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/migration
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/docs src/lib/wiki/schema
+npm test -- --run src/lib/memory
+npm test -- --run src/routes/api/query
+npm test -- --run src/lib/vector/ragPipeline.streaming.test.ts
+npm test -- --run src/lib/graph
+npm test -- --run src/lib/components/ChatPanel.test.ts
+npm test -- --run src/lib/wiki
 ```
 
 If native modules were built with the wrong Node version:
 
 ```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npm rebuild better-sqlite3
+npm rebuild better-sqlite3
 ```
 
 ---
 
-## 2. Local LLM Wiki Workflows
+## 2. Notes workflow checklist
 
-### 2.1 Import a raw source
-
-Automated coverage:
-
-```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/ingest/sourceImporter.test.ts src/lib/wiki/ingest/sourceSummarizer.test.ts src/lib/wiki/ingest/wikiIntegrator.test.ts
-```
-
-Manual checklist:
-
-- [ ] Open the dashboard source import panel.
-- [ ] Import a markdown source with a clear title.
-- [ ] Verify a `raw_sources` row exists.
-- [ ] Verify the raw markdown file appears under `data/vaults/<user-id>/raw/`.
-- [ ] Verify the raw file content matches the submitted content.
-- [ ] Verify a source-summary page appears under `data/vaults/<user-id>/wiki/sources/`.
-- [ ] Verify relevant entity or concept pages are created when deterministic suggestions are available.
-- [ ] Verify `wiki/index.md` updates.
-- [ ] Verify `wiki/log.md` receives a structured ingest entry.
-
-### 2.2 Verify wiki-first query citations
-
-Automated coverage:
-
-```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/query/wikiSearch.test.ts src/lib/wiki/query/wikiAnswerBuilder.test.ts src/lib/wiki/query/queryPipeline.test.ts src/lib/components/ChatPanelCitations.test.ts
-```
-
-Manual checklist:
-
-- [ ] Ask a question answerable from an existing wiki page.
-- [ ] Verify the response cites wiki pages first.
-- [ ] Verify the UI shows wiki citation kind and coverage state.
-- [ ] Ask a question with weak wiki coverage but relevant raw source text.
-- [ ] Verify raw-source fallback is explicit.
-- [ ] Verify the response still includes citation metadata.
-
-### 2.3 File an answer back to the wiki
-
-Automated coverage:
-
-```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/query/answerClassifier.test.ts src/lib/wiki/query/answerToPage.test.ts src/lib/wiki/query/fileAnswerWorkflow.test.ts src/lib/components/FileAnswerPanel.test.ts src/lib/components/ChatPanelFileAnswer.test.ts
-```
-
-Manual checklist:
-
-- [ ] Ask a question that returns a substantive cited answer.
-- [ ] Click “File answer to wiki”.
-- [ ] Verify a question page appears under `wiki/questions/`.
-- [ ] Verify the question page contains the answer, filing context, and citations.
-- [ ] Verify `wiki/index.md` includes the new question page.
-- [ ] Verify `wiki/log.md` records the query filing.
-- [ ] Verify insufficient or error answers are skipped with explicit reasons.
-
-### 2.4 Run wiki lint
-
-Automated coverage:
-
-```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/lint src/lib/components/LintFindingsPanel.test.ts
-```
-
-Manual checklist:
-
-- [ ] Open the Wiki Health panel.
-- [ ] Refresh findings.
-- [ ] Verify broken wiki links are reported as errors.
-- [ ] Verify orphan pages are reported as warnings.
-- [ ] Verify stale low-confidence/open-question pages are reported as warnings.
-- [ ] Verify deterministic `Claim: key = true/false` conflicts are reported as contradictions.
-- [ ] Verify every finding has severity, type, message, and action.
-
-### 2.5 Migrate legacy notes
-
-Automated coverage:
-
-```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/migration/notesToSources.test.ts src/lib/components/LegacyMigrationPanel.test.ts
-```
-
-Manual checklist:
-
-- [ ] Create or identify existing legacy notes.
-- [ ] Click “Migrate legacy notes”.
-- [ ] Verify the result reports migrated and skipped counts.
-- [ ] Verify original legacy notes still exist.
-- [ ] Verify each migrated note appears as a `note` raw source.
-- [ ] Verify migrated raw source files match original note content byte-for-byte.
-- [ ] Run migration a second time.
-- [ ] Verify already migrated notes are skipped and not duplicated.
+- [ ] Sign up or sign in locally.
+- [ ] Create a note.
+- [ ] Edit and save markdown content.
+- [ ] Verify save status resolves successfully.
+- [ ] Reload the app and verify the note remains.
+- [ ] Search/select notes from the sidebar.
+- [ ] Move notes between folders if validating folder behavior.
+- [ ] Insert/render Mermaid, tables, code blocks, links, and images where relevant.
 
 ---
 
-## 3. Schema documentation
+## 3. Chat memory checklist
+
+Prerequisite for local-model fallback:
+
+```bash
+ollama serve
+ollama pull llama3.2:3b
+ollama pull nomic-embed-text
+```
+
+Manual checks:
+
+- [ ] Create a note with a distinctive title and facts.
+- [ ] Open Chat via the nav or `/?chat=1`.
+- [ ] Ask a simple exact-fact question and verify a direct grounded answer.
+- [ ] Ask a reasoning question that should require local model fallback.
+- [ ] Verify the streamed response starts promptly and does not leave the UI blank.
+- [ ] Verify the answer is natural language, not raw graph syntax.
+- [ ] Verify memory coverage appears, e.g. `Memory evidence: 1 note · 2 graph edges`.
+- [ ] Verify source chips point to relevant notes/graph evidence.
+- [ ] Stop a long generation and verify the UI recovers.
+- [ ] Toggle `Use experimental wiki context` only when intentionally testing wiki retrieval.
+
+Known-good regression prompt shape:
+
+```text
+regarding <project/note name>, which feature/item/decision was marked ...?
+```
+
+Expected behavior: answer from note text first; graph links can support retrieval but must not become the answer.
+
+---
+
+## 4. Knowledge graph checklist
+
+- [ ] Create notes with entities, tags, wikilinks, folders, and Mermaid diagrams.
+- [ ] Open `/graph`.
+- [ ] Verify graph nodes/edges are visible.
+- [ ] Verify graph detail/provenance panels explain where edges came from.
+- [ ] Verify graph links improve chat retrieval when a question references a connected note/entity.
+- [ ] Treat the review queue as experimental. If used, verify low-confidence/model-inferred edges can be accepted/rejected without mutating unrelated edges.
+
+UX note: review queue is currently underused and should not be treated as the primary graph workflow until the graph page is redesigned around exploration, evidence, and review.
+
+---
+
+## 5. Skills checklist
+
+- [ ] Open the skills surface.
+- [ ] Generate or export a skill from graph/note context.
+- [ ] Verify generated skill markdown is grounded in selected evidence.
+- [ ] Verify weak or missing evidence is surfaced clearly.
+
+---
+
+## 6. Experimental wiki/source checklist
+
+Use only when validating the opt-in wiki subsystem.
 
 Automated coverage:
 
 ```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/schema/schemaDocs.test.ts src/lib/wiki/docs/productDocs.test.ts
+npm test -- --run src/lib/wiki/ingest
+npm test -- --run src/lib/wiki/query
+npm test -- --run src/lib/wiki/lint
+npm test -- --run src/lib/wiki/migration
 ```
 
-Manual checklist:
+Manual checks:
 
-- [ ] Generate schema docs through `ensureWikiSchemaDocs` or a flow that calls it.
-- [ ] Verify `schema/README.md` describes the LLM-maintained local wiki model.
-- [ ] Verify `schema/raw-source.md` documents raw source fields and immutability.
-- [ ] Verify `schema/wiki-page.md` documents page types and update reasons.
-- [ ] Verify `schema/wiki-mutation.md` documents mutation trigger types.
-
----
-
-## 4. Product acceptance checklist
-
-A release candidate for the local wiki pivot is acceptable when all of the following pass:
-
-1. Import a raw source.
-2. Verify the raw file appears under `raw/` unchanged.
-3. Verify a source-summary page appears under `wiki/sources/`.
-4. Verify at least one related entity or concept page is created or updated.
-5. Verify `wiki/index.md` updates.
-6. Verify `wiki/log.md` gets a structured entry.
-7. Ask a question answerable from the wiki.
-8. Verify wiki-first query citations.
-9. Ask a question the wiki cannot fully answer.
-10. Verify raw-source fallback is explicit.
-11. File an answer back to the wiki.
-12. Run wiki lint and verify findings render in the UI.
-13. Migrate legacy notes and verify no data loss.
-14. Run migration again and verify idempotency.
-15. Restart the app and verify the vault-backed artifacts remain readable.
+- [ ] Import a raw source.
+- [ ] Verify a raw file appears under `data/vaults/<user-id>/raw/` unchanged.
+- [ ] Verify generated wiki pages appear under `wiki/`.
+- [ ] Verify `wiki/index.md` and `wiki/log.md` update.
+- [ ] Ask with experimental wiki context enabled and verify wiki/raw citations.
+- [ ] File a cited answer back to `wiki/questions/`.
+- [ ] Run wiki lint and verify findings render.
+- [ ] Run legacy note migration twice and verify idempotency.
 
 ---
 
-## 5. Legacy feature regression checks
+## 7. Security/privacy checks
 
-The pivot should not regress existing app foundations:
-
-- [ ] Notes can still be created, edited, saved, searched, pinned, and deleted.
-- [ ] Folder tree interactions still work.
-- [ ] Authentication still protects routes.
-- [ ] Ollama URL guardrails still reject non-loopback server requests.
-- [ ] Existing voice/dictation controls degrade gracefully when browser APIs are unavailable.
-- [ ] `npm run check` reports zero errors.
-
-Warnings may remain temporarily if they are pre-existing and explicitly reported.
+- [ ] Confirm private data remains under `MARKDOWN_NOTES_DATA_DIR`/`web/data`.
+- [ ] Confirm local data is not staged for commit.
+- [ ] Verify Ollama URLs reject non-loopback hosts.
+- [ ] Verify unauthenticated `/api/*` requests return 401 except public auth endpoints.
+- [ ] Avoid including private notes in screenshots, logs, issues, or pull requests.

@@ -9,7 +9,8 @@
 		deleteColumn,
 		insertDiagram,
 		insertClassDef,
-		insertImage
+		insertImage,
+		TABLE_TEMPLATE
 	} from './toolbar-actions';
 	import { diagramTemplates, type DiagramTemplateKey } from '$lib/markdown/diagramTemplates';
 	import { uploadImageFile } from './imageUpload';
@@ -23,9 +24,10 @@
 		readOnly?: boolean;
 		onToggleShare?: () => void;
 		onImageInsert?: (markdown: string) => void;
+		onMarkdownBlockInsert?: (markdown: string) => void;
 	}
 
-	let { content, onUpdate, onDictate, isDictating = false, isShared = false, readOnly = false, onToggleShare, onImageInsert }: Props = $props();
+	let { content, onUpdate, onDictate, isDictating = false, isShared = false, readOnly = false, onToggleShare, onImageInsert, onMarkdownBlockInsert }: Props = $props();
 
 	// Dropdown menu states
 	let headingsOpen = $state(false);
@@ -73,7 +75,11 @@
 	}
 
 	function handleInsertTable() {
-		onUpdate(insertTable(content));
+		if (onMarkdownBlockInsert) {
+			onMarkdownBlockInsert(TABLE_TEMPLATE);
+		} else {
+			onUpdate(insertTable(content));
+		}
 		closeAllMenus();
 	}
 

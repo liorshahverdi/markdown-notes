@@ -20,7 +20,10 @@ async function loadModel(): Promise<void> {
 
   loadPromise = (async () => {
     try {
-      const { pipeline: createPipeline } = await import('@xenova/transformers');
+      const { pipeline: createPipeline, env } = await import('@xenova/transformers');
+      // Skip Transformers.js' default /models/... probe. In dev, those probes
+      // show up as noisy 404s before the library falls back to Hugging Face.
+      env.allowLocalModels = false;
       pipeline = await createPipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
       modelLoaded = true;
     } catch (error) {
@@ -83,5 +86,5 @@ self.addEventListener('message', (event: MessageEvent<WorkerMessage>) => {
   }
 });
 
-// Start loading the model immediately
-loadModel();
+// Load lazily on the first fallback embed request. Ollama is the preferred
+// embedding path, so eagerly loading Xenova causes unnecessary network traffic.

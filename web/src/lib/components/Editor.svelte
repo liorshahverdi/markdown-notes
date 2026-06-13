@@ -14,7 +14,8 @@
 		onRegisterInsert?: (
 			insert: (text: string) => void,
 			setGhost: (text: string) => void,
-			clearGhost: () => void
+			clearGhost: () => void,
+			insertBlock: (markdown: string) => void
 		) => void;
 		onImageInsert?: (markdown: string) => void;
 	}
@@ -189,6 +190,21 @@
 					if (!view) return;
 					view.dispatch({
 						effects: clearGhostEffect.of(null),
+					});
+				},
+				// insert a markdown block at the cursor with line-boundary padding
+				(markdown: string) => {
+					if (!view) return;
+					const pos = view.state.selection.main.head;
+					const current = view.state.doc.toString();
+					const before = current.slice(0, pos);
+					const after = current.slice(pos);
+					const prefix = before === '' || before.endsWith('\n') ? '' : '\n';
+					const suffix = after === '' || after.startsWith('\n') ? '' : '\n';
+					const insertion = prefix + markdown + suffix;
+					view.dispatch({
+						changes: { from: pos, insert: insertion },
+						selection: { anchor: pos + prefix.length + markdown.length },
 					});
 				}
 			);

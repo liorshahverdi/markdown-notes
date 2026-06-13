@@ -12,6 +12,14 @@ export interface GraphEntity {
   confidence?: number;
 }
 
+export type GraphExtractionMethod = 'regex' | 'ner' | 'cooccurrence' | 'llm' | 'user' | 'diagram';
+
+export interface GraphEdgeProvenance {
+  noteId: string;
+  excerpt?: string;
+  method: GraphExtractionMethod;
+}
+
 export interface GraphRelation {
   id: string;
   fromEntityId: string;
@@ -27,12 +35,23 @@ export interface GraphRelation {
     | 'precedes'
     | 'part_of'
     | 'depends_on'
+    | 'implements'
+    | 'contrasts_with'
+    | 'inferred_by_model'
+    | 'used_by_skill'
+    | 'derived_from'
     | 'attended'
     | 'located_at'
     | 'owns'
     | 'created'
     | 'mentioned_in';
   weight?: number;
+  confidence?: number;
+  provenance?: GraphEdgeProvenance[];
+  accepted?: boolean;
+  rejected?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
   metadata?: Record<string, unknown>;
 }
 

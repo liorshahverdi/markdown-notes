@@ -55,7 +55,7 @@ async function embedViaOllama(texts: string[], ollamaUrl: string = DEFAULT_OLLAM
 }
 
 /** Embed a single text string, returning its vector */
-async function embedText(text: string): Promise<number[]> {
+export async function embedText(text: string): Promise<number[]> {
   if (ollamaEmbedAvailable) {
     try {
       const [vector] = await embedViaOllama([text]);
@@ -69,7 +69,7 @@ async function embedText(text: string): Promise<number[]> {
 }
 
 /** Embed multiple texts in batch (Ollama supports batching) */
-async function embedBatch(texts: string[]): Promise<number[][]> {
+export async function embedBatch(texts: string[]): Promise<number[][]> {
   if (ollamaEmbedAvailable) {
     try {
       return await embedViaOllama(texts);

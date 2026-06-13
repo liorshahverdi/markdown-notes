@@ -16,18 +16,26 @@ export function prependToLine(content: string, prefix: string): string {
 	return content + '\n' + prefix;
 }
 
-const TABLE_TEMPLATE = [
+export const TABLE_TEMPLATE = [
 	'| Column 1 | Column 2 | Column 3 |',
 	'|----------|----------|----------|',
 	'| data     | data     | data     |',
 	'| data     | data     | data     |'
 ].join('\n');
 
+/** Inserts a markdown block at a cursor position, adding line breaks when needed. */
+export function insertBlockAtPosition(content: string, block: string, position: number): string {
+	const safePosition = Math.max(0, Math.min(position, content.length));
+	const before = content.slice(0, safePosition);
+	const after = content.slice(safePosition);
+	const prefix = before === '' || before.endsWith('\n') ? '' : '\n';
+	const suffix = after === '' || after.startsWith('\n') ? '' : '\n';
+	return before + prefix + block + suffix + after;
+}
+
 /** Inserts a 3-col, 2-row table template */
 export function insertTable(content: string): string {
-	if (content === '') return TABLE_TEMPLATE;
-	if (content.endsWith('\n')) return content + TABLE_TEMPLATE;
-	return content + '\n' + TABLE_TEMPLATE;
+	return insertBlockAtPosition(content, TABLE_TEMPLATE, content.length);
 }
 
 /** Line starts with | and ends with | and length >= 3 */

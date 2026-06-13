@@ -3,8 +3,8 @@
 	import { onMount } from 'svelte';
 	import { v4 as uuidv4 } from 'uuid';
 	import { ragConfig } from '$lib/stores/rag';
-	import { selectedNoteId } from '$lib/stores/notes';
-	import { proxyCheckHealth } from '$lib/llm/ollamaProxy';
+	import { notes, selectedNote } from '$lib/stores/notes';
+	import { synthesizeAnswerFromMemory } from '$lib/memory/answerSynthesizer';
 	import { createSpeechRecognition } from '$lib/voice/speechRecognition';
 	import { speak, stopSpeaking, isSpeaking } from '$lib/voice/speechSynthesis';
 	import { loadVoicePreferences } from '$lib/voice/voicePreferences';
@@ -17,15 +17,17 @@
 		noteId: string;
 		title: string;
 		relevanceScore: number;
-		kind?: 'wiki-page' | 'raw-source' | 'note';
+		kind?: 'wiki-page' | 'raw-source' | 'note' | 'note-chunk' | 'graph-edge' | 'wiki';
 		wikiPath?: string;
 	}
+
+	type ChatCoverage = 'strong' | 'weak' | { noteCount: number; graphEdgeCount: number; hasEvidence: boolean };
 
 	interface Message {
 		role: 'user' | 'assistant';
 		text: string;
 		sources?: Source[];
-		coverage?: 'strong' | 'weak';
+		coverage?: ChatCoverage;
 		usedRawFallback?: boolean;
 	}
 
@@ -38,42 +40,63 @@
 	let error = $state<string | null>(null);
 	let isListening = $state(false);
 	let abortController: AbortController | null = null;
+	let includeExperimentalWiki = $state(false);
 	let messagesEndEl: HTMLDivElement;
 	let scrollContainerEl: HTMLDivElement;
 
 	// Speech recognition
 	let speechRec: ReturnType<typeof createSpeechRecognition> | null = null;
 
-	// Track current noteId for chat persistence
-	let currentChatNoteId: string | null = null;
+	const GLOBAL_CHAT_NOTE_ID = '__global__';
 
-	/** Load persisted chat messages for the current note context. */
+	function isTransientAssistantText(text: string): boolean {
+		const normalized = text.trim();
+		return normalized === ''
+			|| normalized === 'Searching your notes and graph…'
+			|| normalized === 'Searching your notes and graph...'
+			|| normalized.startsWith('Still waiting for the chat stream to start')
+			|| normalized === 'I found relevant notes. Asking Ollama to reason over them…'
+			|| normalized === 'I found relevant notes. Asking Ollama to reason over them...';
+	}
+
+	async function deleteTransientChatPlaceholders(records: ChatMessageRecord[]) {
+		const transientIds = records
+			.filter((record) => record.role === 'assistant' && isTransientAssistantText(record.content))
+			.map((record) => record.id);
+		if (transientIds.length === 0) return;
+		try {
+			await db.chatMessages.bulkDelete(transientIds);
+		} catch {}
+	}
+
+	/** Load the single global chat history, independent of the open note. */
 	async function loadChatHistory() {
-		const noteId = get(selectedNoteId);
-		currentChatNoteId = noteId;
 		try {
 			const records = await db.chatMessages
 				.where('noteId')
-				.equals(noteId ?? '__global__')
+				.equals(GLOBAL_CHAT_NOTE_ID)
 				.sortBy('timestamp');
-			messages = records.map((r) => ({
-				role: r.role,
-				text: r.content,
-				sources: r.sources,
-				coverage: (r as ChatMessageRecord & { coverage?: 'strong' | 'weak' }).coverage,
-				usedRawFallback: (r as ChatMessageRecord & { usedRawFallback?: boolean }).usedRawFallback,
-			}));
+			await deleteTransientChatPlaceholders(records);
+			messages = records
+				.filter((r) => !(r.role === 'assistant' && isTransientAssistantText(r.content)))
+				.map((r) => ({
+					role: r.role,
+					text: r.content,
+					sources: r.sources,
+					coverage: (r as ChatMessageRecord & { coverage?: ChatCoverage }).coverage,
+					usedRawFallback: (r as ChatMessageRecord & { usedRawFallback?: boolean }).usedRawFallback,
+				}));
 		} catch {
 			messages = [];
 		}
 	}
 
-	/** Persist a single message to IndexedDB. */
+	/** Persist a single message to the global chat thread in IndexedDB. */
 	async function persistMessage(msg: Message) {
-		const noteId = currentChatNoteId ?? '__global__';
+		if (msg.role === 'assistant' && isTransientAssistantText(msg.text)) return;
 		const record: ChatMessageRecord = {
 			id: uuidv4(),
-			noteId,
+			noteId: GLOBAL_CHAT_NOTE_ID,
 			role: msg.role,
 			content: msg.text,
 			sources: msg.sources,
@@ -86,11 +109,10 @@
 		}
 	}
 
-	/** Clear conversation for the current note context. */
+	/** Clear the global conversation. */
 	async function clearConversation() {
-		const noteId = currentChatNoteId ?? '__global__';
 		try {
-			await db.chatMessages.where('noteId').equals(noteId).delete();
+			await db.chatMessages.where('noteId').equals(GLOBAL_CHAT_NOTE_ID).delete();
 		} catch {}
 		messages = [];
 		error = null;
@@ -98,14 +120,6 @@
 
 	onMount(() => {
 		loadChatHistory();
-	});
-
-	// Reload chat when selected note changes
-	$effect(() => {
-		const noteId = $selectedNoteId;
-		if (noteId !== currentChatNoteId) {
-			loadChatHistory();
-		}
 	});
 
 	let speakingMsgIdx = $state<number | null>(null);
@@ -135,11 +149,34 @@
 		}
 	}
 
+	function buildClientFastRecall(query: string): string {
+		const selected = get(selectedNote);
+		const candidates = selected ? [selected, ...get(notes).filter((note) => note.id !== selected.id)] : get(notes);
+		const answer = synthesizeAnswerFromMemory({
+			query,
+			citations: candidates.map((note) => ({
+				id: note.id,
+				noteId: note.id,
+				kind: 'note',
+				title: note.title,
+				relevanceScore: 0.5,
+				excerpt: note.content,
+			})),
+		});
+		return answer.confidence === 'high' ? answer.answer : '';
+	}
+
 	function previousUserQuestion(index: number): string {
 		for (let i = index - 1; i >= 0; i--) {
 			if (messages[i]?.role === 'user') return messages[i].text;
 		}
 		return '';
+	}
+
+	function memoryCoverageLabel(coverage: ChatCoverage | undefined): string | null {
+		if (!coverage) return null;
+		if (typeof coverage === 'string') return `Wiki coverage: ${coverage}`;
+		return `Memory evidence: ${coverage.noteCount} ${coverage.noteCount === 1 ? 'note' : 'notes'} · ${coverage.graphEdgeCount} ${coverage.graphEdgeCount === 1 ? 'graph edge' : 'graph edges'}`;
 	}
 
 	function wikiCitations(sources: Source[] | undefined) {
@@ -166,56 +203,128 @@
 		isLoading = true;
 		scrollToBottom();
 
-		const config = get(ragConfig);
-		// Check Ollama health
-		const healthy = await proxyCheckHealth(config.ollamaUrl);
-		if (!healthy) {
-			error = 'Ollama not reachable. Make sure it is running.';
-			isLoading = false;
-			return;
+		const instantRecall = buildClientFastRecall(query);
+		messages = [...messages, { role: 'assistant', text: instantRecall, sources: [] }];
+		let assistantIndex = messages.length - 1;
+		scrollToBottom();
+
+		function getAssistantMessage(): Message | null {
+			return assistantIndex >= 0 ? messages[assistantIndex] ?? null : null;
 		}
 
+		function updateAssistantMessage(updater: (message: Message) => void) {
+			const current = getAssistantMessage();
+			if (!current) return;
+			const next: Message = { ...current, sources: current.sources ? [...current.sources] : undefined };
+			updater(next);
+			messages = messages.map((message, index) => index === assistantIndex ? next : message);
+		}
+
+		const config = get(ragConfig);
+		let startupWatchdog: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+			const assistant = getAssistantMessage();
+			if (assistant && isTransientAssistantText(assistant.text)) {
+				updateAssistantMessage((message) => {
+					message.text = 'Still waiting for the chat stream to start. If this stays here, Ollama or the dev server is not returning data.';
+				});
+				abortController?.abort(new Error('Chat stream did not start within 12 seconds'));
+			}
+		}, 12_000);
+
 		try {
-			// The primary chat path now goes through the server query pipeline so normal UX
-			// uses wiki-first retrieval, wiki/raw citations, coverage state, and answer filing.
+			// Default chat uses notes + graph memory. Generated wiki context is opt-in/experimental.
 			const timeoutSignal = AbortSignal.timeout(120_000);
 			abortController = new AbortController();
 			const combinedSignal = AbortSignal.any([abortController.signal, timeoutSignal]);
 			const response = await fetch('/api/query', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ query, model: config.model, ollamaUrl: config.ollamaUrl }),
+				body: JSON.stringify({
+					query,
+					model: config.model,
+					ollamaUrl: config.ollamaUrl,
+					includeExperimentalWiki,
+					stream: true,
+				}),
 				signal: combinedSignal,
 			});
-			if (!response.ok) {
+			if (!response.ok || !response.body) {
 				const message = await response.text();
 				throw new Error(message || `Query failed with ${response.status}`);
 			}
-			const result = await response.json() as {
-				response: string;
-				sources?: Source[];
-				citations?: Source[];
-				coverage?: 'strong' | 'weak';
-				usedRawFallback?: boolean;
-			};
-			const assistantMsg: Message = {
-				role: 'assistant',
-				text: result.response,
-				sources: result.citations ?? result.sources ?? [],
-				coverage: result.coverage,
-				usedRawFallback: result.usedRawFallback,
-			};
-			messages = [...messages, assistantMsg];
-			persistMessage(assistantMsg);
+
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+
+			async function handleStreamLine(line: string) {
+				if (!line.trim()) return;
+				if (startupWatchdog) {
+					clearTimeout(startupWatchdog);
+					startupWatchdog = null;
+				}
+				const event = JSON.parse(line) as {
+					type: 'meta' | 'token' | 'done' | 'error';
+					token?: string;
+					message?: string;
+					sources?: Source[];
+					citations?: Source[];
+					coverage?: ChatCoverage;
+					usedRawFallback?: boolean;
+				};
+				updateAssistantMessage((assistantMsg) => {
+					if (event.type === 'meta') {
+						assistantMsg.sources = event.citations ?? event.sources ?? [];
+						assistantMsg.coverage = event.coverage;
+						assistantMsg.usedRawFallback = event.usedRawFallback;
+					} else if (event.type === 'token') {
+						const token = event.token ?? '';
+						if (isTransientAssistantText(assistantMsg.text) || assistantMsg.text.startsWith('Still waiting for the chat stream to start')) {
+							assistantMsg.text = token;
+						} else if (!(assistantMsg.text.trim() && token.trim() && assistantMsg.text.trim() === token.trim())) {
+							assistantMsg.text += token;
+						}
+					} else if (event.type === 'error') {
+						assistantMsg.text += event.message ?? 'Error querying Ollama';
+					}
+				});
+				scrollToBottom();
+			}
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() ?? '';
+				for (const line of lines) await handleStreamLine(line);
+			}
+			if (buffer.trim()) await handleStreamLine(buffer);
+			const assistantMsg = getAssistantMessage();
+			if (assistantMsg) persistMessage(assistantMsg);
 		} catch (err) {
 			if (!(err instanceof DOMException && err.name === 'AbortError')) {
-				let msg = err instanceof Error ? err.message : 'Failed to query wiki';
+				let msg = err instanceof Error ? err.message : 'Failed to query notes';
 				if (msg.includes('stalled') || msg.includes('TimeoutError') || msg.includes('timed out')) {
 					msg = 'Response timed out. Ollama may be overloaded or the model is too slow for this query.';
 				}
-				error = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
+				const visibleMsg = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
+				error = visibleMsg;
+				const assistant = getAssistantMessage();
+				if (assistant && isTransientAssistantText(assistant.text)) {
+					updateAssistantMessage((message) => {
+						message.text = `I could not finish the query: ${visibleMsg}`;
+					});
+				}
 			}
 		} finally {
+			if (startupWatchdog) clearTimeout(startupWatchdog);
+			const assistant = getAssistantMessage();
+			if (assistant && isTransientAssistantText(assistant.text)) {
+				updateAssistantMessage((message) => {
+					message.text = 'The chat request ended before the server returned any answer. Check Ollama/server logs and try again.';
+				});
+			}
 			abortController = null;
 			isLoading = false;
 			scrollToBottom();
@@ -350,10 +459,10 @@
 							{/if}
 						</div>
 
-						<!-- Wiki coverage state -->
-						{#if msg.coverage}
-							<div class="mt-1 text-xs text-gray-500 dark:text-gray-400" data-testid="wiki-coverage-state">
-								Wiki coverage: {msg.coverage}{msg.usedRawFallback ? ' · raw-source fallback used' : ''}
+						<!-- Retrieval coverage state -->
+						{#if memoryCoverageLabel(msg.coverage)}
+							<div class="mt-1 text-xs text-gray-500 dark:text-gray-400" data-testid="retrieval-coverage-state">
+								{memoryCoverageLabel(msg.coverage)}{typeof msg.coverage === 'string' && msg.usedRawFallback ? ' · raw-source fallback used' : ''}
 							</div>
 						{/if}
 
@@ -397,7 +506,7 @@
 								question={previousUserQuestion(messages.indexOf(msg))}
 								answer={msg.text}
 								citations={wikiCitations(msg.sources)}
-								coverage={msg.coverage ?? 'weak'}
+								coverage={typeof msg.coverage === 'string' ? msg.coverage : 'weak'}
 								usedRawFallback={msg.usedRawFallback ?? false}
 							/>
 						{/if}
@@ -432,6 +541,13 @@
 
 	<!-- Input bar -->
 	<div class="border-t border-gray-200 px-4 py-3 dark:border-gray-700">
+		<div class="mb-2 flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+			<span>Memory: notes + graph</span>
+			<label class="inline-flex items-center gap-1">
+				<input type="checkbox" bind:checked={includeExperimentalWiki} disabled={isLoading} />
+				Use experimental wiki context
+			</label>
+		</div>
 		<div class="flex items-center gap-2">
 			<input
 				type="text"

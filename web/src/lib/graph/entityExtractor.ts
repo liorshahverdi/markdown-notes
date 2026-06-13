@@ -11,11 +11,16 @@ export interface ExtractedRelation {
   fromName: string;
   toName: string;
   type: GraphRelation['type'];
+  method?: 'regex' | 'ner' | 'cooccurrence' | 'llm' | 'user' | 'diagram';
+  excerpt?: string;
+  confidence?: number;
 }
 
 const HEADING_RE = /^#{1,3}\s+(.+)$/gm;
 const HASHTAG_RE = /(?:^|\s)#(\w+)/g;
 const LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
+const MERMAID_BLOCK_RE = /```mermaid\s*\n([\s\S]*?)```/gi;
+const MERMAID_EDGE_RE = /^\s*([A-Za-z0-9_][\w -]*?)(?:\[[^\]]+\])?\s*(?:-->|---|==>|-.->)\s*([A-Za-z0-9_][\w -]*?)(?:\[[^\]]+\])?\s*$/gm;
 
 const MAX_HEADINGS_PER_NOTE = 10;
 
@@ -165,7 +170,36 @@ export function extractEntities(
     relations.push({ fromName: title, toName: linkText, type: 'links_to' });
   }
 
-  // 5. Extract folder entities and relations
+  // 5. Extract Mermaid diagram nodes and edges as graph evidence
+  let mermaidMatch: RegExpExecArray | null;
+  while ((mermaidMatch = MERMAID_BLOCK_RE.exec(content)) !== null) {
+    const diagram = mermaidMatch[1];
+    let edgeMatch: RegExpExecArray | null;
+    MERMAID_EDGE_RE.lastIndex = 0;
+    while ((edgeMatch = MERMAID_EDGE_RE.exec(diagram)) !== null) {
+      const fromName = edgeMatch[1].trim();
+      const toName = edgeMatch[2].trim();
+      if (!fromName || !toName) continue;
+
+      for (const nodeName of [fromName, toName]) {
+        const key = `Object::diagram::${nodeName}`;
+        if (!entityMap.has(key)) {
+          entityMap.set(key, { name: nodeName, type: 'Object', subtype: 'diagram-node', confidence: 0.9 });
+        }
+      }
+
+      relations.push({
+        fromName,
+        toName,
+        type: 'depends_on',
+        method: 'diagram',
+        excerpt: edgeMatch[0].trim(),
+        confidence: 0.9,
+      });
+    }
+  }
+
+  // 6. Extract folder entities and relations
   if (folderPath && folderPath.length > 0) {
     for (let i = 0; i < folderPath.length; i++) {
       const folderName = folderPath[i];
@@ -186,7 +220,7 @@ export function extractEntities(
     relations.push({ fromName: innermostFolder, toName: title, type: 'contains' });
   }
 
-  // 6. Extract Event entities from date patterns and temporal markers
+  // 7. Extract Event entities from date patterns and temporal markers
   const contentLower = content.toLowerCase();
   for (const pattern of DATE_PATTERNS) {
     let dateMatch: RegExpExecArray | null;
@@ -221,7 +255,7 @@ export function extractEntities(
     }
   }
 
-  // 7. Extract Object entities from tool/framework patterns
+  // 8. Extract Object entities from tool/framework patterns
   let toolMatch: RegExpExecArray | null;
   while ((toolMatch = TOOL_PATTERNS.exec(content)) !== null) {
     const toolName = toolMatch[1].trim();
@@ -254,7 +288,10 @@ async function loadNERPipeline(): Promise<void> {
 
   nerLoadPromise = (async () => {
     try {
-      const { pipeline } = await import('@xenova/transformers');
+      const { pipeline, env } = await import('@xenova/transformers');
+      // Skip Transformers.js' default /models/... probe. In dev, those probes
+      // show up as noisy 404s before the library falls back to Hugging Face.
+      env.allowLocalModels = false;
       nerPipeline = await pipeline('token-classification', 'Xenova/bert-base-NER');
     } catch (e) {
       console.warn('[NER] Failed to load NER pipeline:', e);

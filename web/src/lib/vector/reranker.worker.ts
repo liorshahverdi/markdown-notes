@@ -25,7 +25,10 @@ async function loadModel(): Promise<void> {
 
   loadPromise = (async () => {
     try {
-      const { pipeline } = await import('@xenova/transformers');
+      const { pipeline, env } = await import('@xenova/transformers');
+      // Skip Transformers.js' default /models/... probe. In dev, those probes
+      // show up as noisy 404s before the library falls back to Hugging Face.
+      env.allowLocalModels = false;
       // Cross-encoder for passage reranking
       classifier = await pipeline('text-classification', 'Xenova/ms-marco-MiniLM-L-6-v2');
     } catch (error) {

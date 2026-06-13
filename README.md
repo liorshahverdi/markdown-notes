@@ -1,26 +1,39 @@
 # Markdown Notes
 
-This repository contains two related Markdown notes applications that are being prepared for open source release.
+Markdown Notes is a local-first markdown notes workspace with graph-powered memory and optional local-model assistance through Ollama.
+
+This repository contains two related applications:
+
+- `web/` — the active SvelteKit app for local-first notes, graph memory, chat, skills, and experimental wiki tooling.
+- `MarkdownNotes/` — a native Swift/macOS markdown notes app kept in the repository with its own tests.
 
 ## Repository map
 
 ```text
 .
-├── web/             # SvelteKit + TypeScript local wiki/web app
-│   ├── src/         # Application routes, UI components, stores, server helpers, wiki/RAG logic
+├── web/             # SvelteKit + TypeScript local-first notes app
+│   ├── src/         # routes, components, stores, server helpers, graph/memory/wiki logic
 │   ├── cli/         # TypeScript command-line client for the web app
-│   ├── docs/        # Product plans, QA notes, and implementation reviews
-│   └── scripts/     # Utility and migration scripts
+│   └── data/        # local runtime data when MARKDOWN_NOTES_DATA_DIR is not set; do not commit
 ├── MarkdownNotes/   # Native Swift/macOS Markdown notes app
 │   ├── Sources/     # Swift app source code
-│   ├── Tests/       # Swift package tests
-│   └── scripts/     # macOS bundling/icon helper scripts
-└── README.md        # Top-level project overview and repository map
+│   └── Tests/       # Swift package tests
+├── docs/            # Architecture, development, security, roadmap, QA, and planning docs
+└── README.md        # Top-level project overview
 ```
 
 ## Current status
 
-This project is in pre-open-source preparation. Release packaging and production hardening are still being finalized.
+The active web app has pivoted back to a note-first product model:
+
+- user-authored markdown notes are the source of truth
+- the knowledge graph is built from notes, entities, links, folders, and Mermaid diagrams
+- chat defaults to notes + graph memory
+- Ollama is used only when deterministic memory recall is insufficient
+- generated wiki/source ingestion remains available as an experimental subsystem
+- graph review helpers exist, but the review queue is not yet a primary workflow
+
+The project is still local-first/pre-release software. Production or non-local deployment requires additional hardening.
 
 ## Quickstart
 
@@ -32,7 +45,15 @@ npm ci
 npm run dev
 ```
 
-The web app defaults to `./data` for local runtime state. Set `MARKDOWN_NOTES_DATA_DIR` to use another location.
+The web app defaults to `web/data` for local runtime state. Set `MARKDOWN_NOTES_DATA_DIR` to use another location.
+
+Optional local model setup:
+
+```bash
+ollama serve
+ollama pull llama3.2:3b
+ollama pull nomic-embed-text
+```
 
 ### CLI
 
@@ -49,6 +70,15 @@ cd MarkdownNotes
 swift test
 ```
 
+## Validation
+
+```bash
+cd web
+npm run check
+npm test
+npm run build
+```
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
@@ -58,6 +88,7 @@ swift test
 - [Privacy](docs/privacy.md)
 - [CLI](docs/cli.md)
 - [Roadmap](docs/roadmap.md)
+- [Web app details](web/README.md)
 
 ## License
 

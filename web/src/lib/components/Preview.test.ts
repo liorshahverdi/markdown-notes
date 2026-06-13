@@ -22,6 +22,7 @@ vi.mock('$lib/markdown/textStatistics', () => ({
 	}))
 }));
 
+import mermaid from 'mermaid';
 import { renderMarkdown } from '$lib/markdown/renderer';
 import { computeTextStatistics } from '$lib/markdown/textStatistics';
 
@@ -33,6 +34,7 @@ describe('Preview', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
+		vi.mocked(renderMarkdown).mockImplementation((md: string) => `<p>${md}</p>`);
 	});
 
 	afterEach(() => {
@@ -103,6 +105,29 @@ describe('Preview', () => {
 		expect(previewEl).toBeTruthy();
 		expect(previewEl!.innerHTML.trim()).toBe('');
 	});
+
+	it('shows an actionable Mermaid error without removing the diagram source', async () => {
+		vi.mocked(renderMarkdown).mockReturnValue(
+			'<pre><code class="language-mermaid">graph TD\nA --&gt; </code></pre>'
+		);
+		vi.mocked(mermaid.run).mockRejectedValueOnce(new Error('Parse error on line 2'));
+
+		const { render, act, waitFor } = await import('@testing-library/svelte');
+		const { default: Preview } = await import('./Preview.svelte');
+		const { container } = render(Preview, { props: { markdown: '```mermaid\ngraph TD\nA --> \n```' } });
+
+		await act(() => vi.advanceTimersByTime(300));
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		await waitFor(() => expect(container.querySelector('.mermaid-error')).toBeTruthy());
+		const error = container.querySelector('.mermaid-error');
+		expect(error?.textContent).toContain('Mermaid diagram could not be rendered');
+		expect(error?.textContent).toContain('Parse error on line 2');
+		expect(error?.textContent).toContain('graph TD');
+	});
 });
 
 // ─────────────────────────────────────────────────────────
@@ -154,6 +179,31 @@ describe('StatusBar', () => {
 		expect(container.textContent).toContain('0 chars');
 		expect(container.textContent).toContain('0 lines');
 	});
+
+	it('shows conflict recovery status and retry action', async () => {
+		const retry = vi.fn();
+		const { render, fireEvent } = await import('@testing-library/svelte');
+		const { default: StatusBar } = await import('./StatusBar.svelte');
+
+		const { getByRole, container } = render(StatusBar, {
+			props: {
+				content: 'Hello',
+				saveStatus: 'conflict',
+				saveIssue: {
+					kind: 'conflict',
+					noteId: 'n1',
+					message: 'Changed elsewhere',
+					timestamp: 1,
+					serverNote: { id: 'n1', title: 'N1', content: 'server', dateModified: 1, isPinned: false },
+				},
+				onRetry: retry,
+			},
+		});
+
+		expect(container.textContent).toContain('Save conflict');
+		await fireEvent.click(getByRole('button', { name: /Retry now/i }));
+		expect(retry).toHaveBeenCalledOnce();
+	});
 });
 
 // ─────────────────────────────────────────────────────────
@@ -167,11 +217,12 @@ describe('EmptyState', () => {
 
 		const { container } = render(EmptyState);
 
-		expect(container.textContent).toContain('Build your local markdown wiki.');
-		expect(container.textContent).toContain('Import sources');
-		expect(container.textContent).toContain('markdown vault');
-		expect(container.textContent).toContain('folders');
-		expect(container.textContent).toContain('generated wiki pages');
+		expect(container.textContent).toContain('Write markdown notes and diagrams.');
+		expect(container.textContent).toContain('Create a note');
+		expect(container.textContent).toContain('knowledge graph');
+		expect(container.textContent).toContain('chat memory');
+		expect(container.textContent).toContain('agent skills');
+		expect(container.textContent).not.toContain('generated wiki pages');
 	});
 
 	it('renders a document icon', async () => {

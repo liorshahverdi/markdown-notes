@@ -1,134 +1,93 @@
-# RAG System Improvements
+# RAG and Chat Memory Improvements
 
-Targeted improvements to the existing local RAG system.
+This document reflects the current note-first RAG/chat path.
 
----
+## Current architecture
 
-## Completed: Prompt Construction & Excerpt Extraction Overhaul
+Default chat uses notes + graph memory through `POST /api/query`.
 
-**Problem**: Large notes (>12k chars) were truncated from the top, losing content in later sections. Queries about specific people in transcripts or broad summary requests failed because relevant content was cut.
+Pipeline summary:
 
-**Changes** (in `src/lib/vector/ragPipeline.ts` and `src/routes/api/query/+server.ts`):
+1. Load authenticated user's notes and folders.
+2. For streaming chat, open an NDJSON response immediately so the UI is never blank while retrieval/model work runs.
+3. Retrieve context with lexical/title matching and persisted local memory chunks.
+4. Expand context with graph evidence.
+5. Return deterministic high-confidence synthesized answers only for narrow safe cases.
+6. Otherwise build an Ollama chat prompt with note text first and graph links as supporting/navigation context.
+7. Stream Ollama tokens into one assistant message.
 
-1. **Increased `MAX_PROMPT_CHARS` from 12,000 to 32,000** — llama3.2:3b supports 128k context tokens, so the old limit was unnecessarily restrictive.
+Important current rule: graph links help retrieval and context, but note text must answer factual questions. Raw graph syntax must not appear as the answer.
 
-2. **Section-aware excerpt extraction** — `extractRelevantExcerpt` now splits notes by markdown headers (not just paragraphs) and scores each section by query term matches, with 2x bonus for header matches. This ensures the right sections are prioritized.
+## Completed improvements
 
-3. **Paragraph-level extraction within sections** — When a section is too large, `extractParagraphsFromSection` scores individual paragraphs by query terms and keeps the highest-scoring ones. This prevents a person's quotes from being lost just because they appear late in a transcript.
+### Streaming and UI responsiveness
 
-4. **Broad vs focused query detection** — `isBroadQuery()` detects summary-type queries ("summarize", "overview", "everyone", etc.) and switches to even paragraph sampling across sections for coverage of all speakers/topics, rather than term-frequency scoring that drops unmatched paragraphs.
+- `/api/query` supports streaming NDJSON responses.
+- The server emits an immediate `Searching your notes and graph…` status for interactive chat.
+- The server emits `I found relevant notes. Asking Ollama to reason over them…` only when it actually falls through to Ollama.
+- Abort signals are passed through to local model calls.
+- `ChatPanel.svelte` immutably updates the active assistant message so Svelte 5 renders streamed tokens reliably.
 
-5. **Relevance-weighted note budgets** — `buildRAGPrompt` receives relevance scores from search and allocates more character budget to higher-scored notes proportionally, rather than splitting evenly.
+### Prompt construction
 
-6. **Reversed note order (lost-in-the-middle fix)** — Highest-relevance notes are placed last in the prompt, closest to the instruction, to combat LLM attention bias that underweights middle content.
+- `MAX_PROMPT_CHARS` is now large enough for substantial note context.
+- Excerpt extraction is section-aware and paragraph-aware.
+- Broad query detection uses broader sampling.
+- Higher-relevance notes are placed close to the final answer instruction.
+- Note text is placed before graph context.
+- Graph context is labeled as supporting/navigation context only.
+- The system prompt tells the model not to answer with raw graph-edge syntax.
 
-7. **Knowledge graph re-indexing on folder move** — `moveNoteToFolder` now calls `extractAndSaveEntities` (via dynamic import) after persisting the move, so graph entities/relations update with the new folder context.
+### Notes + graph retrieval
 
----
+- Default chat is notes+graph memory, not wiki-first.
+- The query path uses note title/content scoring, persisted memory chunks, graph neighborhood expansion, and citation metadata.
+- Chat displays structured memory coverage such as `Memory evidence: 1 note · 3 graph edges`.
+- Experimental wiki context is opt-in from the chat UI.
 
-## Completed: Sidebar Folder Tree View
+### Server-side memory index
 
-**Problem**: Flat "navigate into folder" model with breadcrumbs required clicking into each folder to see contents.
+- Note saves trigger local memory indexing.
+- The server stores memory chunks in SQLite.
+- Embeddings prefer Ollama `nomic-embed-text` and fall back to local Xenova paths when needed.
 
-**Changes** (in `src/lib/stores/folders.ts`, `src/lib/components/SidebarFolderItem.svelte`, `src/lib/components/Sidebar.svelte`):
+### Graph formatting
 
-1. **Expandable tree** — `SidebarFolderItem` is now recursive, accepting `FolderTreeNode` (which includes `children` and `notes`) with depth-based indentation and expand/collapse chevrons.
+- Graph context is formatted in natural language rather than arrow syntax.
+- Graph links are still exposed as citations/evidence, but they should not be treated as the answer to factual questions.
 
-2. **Inline notes** — Notes appear nested under their parent folder in the tree when expanded, not in a separate list below.
+## Remaining improvements
 
-3. **Auto-expand on load** — `loadFolders` initializes `expandedFolderIds` with all folder IDs so the full tree is visible immediately.
+### 1. Improve graph UI/UX
 
-4. **Store helpers** — Added `toggleFolderExpanded`, `expandFolder`, `rootNotes`, and enriched `FolderTreeNode` with `notes: NoteRecord[]`.
+The review queue is currently underused. The graph page should prioritize exploration and evidence:
 
----
+- search/filter graph nodes and relation types
+- show clear edge provenance and note excerpts
+- explain why each edge exists
+- let users ask chat about selected graph items
+- make review queue contextual rather than primary
 
-## Remaining Improvements
+### 2. Persist/cold-start optimization
 
-## 1. Persist Embeddings to IndexedDB
+Memory chunks persist server-side, but browser/vector worker paths still need continued cleanup so reloads avoid unnecessary work everywhere.
 
-**Problem**: Vectors live only in memory. Every page reload re-embeds all notes — slow cold starts, wasted compute.
+### 3. Better reranking
 
-**Current state**: The `embeddings` table in IndexedDB stores only `id` and `textHash` (content fingerprints), not actual vectors. `vectorStore.ts` holds a plain `VectorEntry[]` array in memory.
+Cosine similarity remains a weak relevance signal. Candidate reranking should be improved with lightweight local rerankers or deterministic evidence scoring.
 
-**Fix**:
-- Extend the `embeddings` IndexedDB table to store `vector: number[]` alongside `textHash`
-- On init, load persisted vectors into the in-memory `VectorStore` — skip embedding for notes whose `textHash` hasn't changed
-- On embed, write vectors to IndexedDB alongside the existing hash check
-- Bump Dexie schema version
+### 4. Better timing instrumentation
 
-**Files**:
-- `src/lib/db/index.ts` — add `vector` field to embeddings table schema
-- `src/lib/vector/vectorStoreManager.ts` — load from DB on init, save after embedding
-- `src/lib/vector/vectorStore.ts` — accept pre-built entries on init
+Add timing spans for:
 
----
+- note load
+- lexical retrieval
+- memory-index embedding/search
+- graph expansion
+- prompt construction
+- model first token
+- model completion
 
-## 2. Add Chunk Overlap
+### 5. More regression prompts
 
-**Problem**: 2000-char chunks with zero overlap lose context at boundaries. A sentence split across two chunks may not be retrievable by either.
-
-**Current state**: `vectorStore.ts:chunkText()` splits on paragraph boundaries sequentially, no sliding window.
-
-**Fix**:
-- Add ~200 char overlap between consecutive chunks (roughly 10% of chunk size)
-- When accumulating paragraphs, carry the last paragraph of the previous chunk into the next
-- Keep chunk IDs stable (noteId_chunkIndex) — overlap doesn't change identity
-
-**Files**:
-- `src/lib/vector/vectorStore.ts` — modify `chunkText()` to carry overlap
-
----
-
-## 3. Integrate Knowledge Graph into Retrieval
-
-**Problem**: Entity extraction and relationship discovery exist but are completely isolated from RAG retrieval. The graph is built and visualized but never queried during search.
-
-**Current state**: `entityExtractor.ts` extracts entities (topics, tags, links). `relationshipDiscoverer.ts` finds co-occurring entity pairs. Neither is referenced in `ChatPanel.svelte` or `ragPipeline.ts`.
-
-**Fix**:
-- After vector search returns top-K results, use the knowledge graph to expand the result set:
-  1. Extract entities from the query (simple keyword match against known entities)
-  2. Find notes connected to those entities via relations
-  3. Boost scores of notes that are graph-connected to top vector results
-  4. Add graph-only results (not in vector top-K) with a lower base score
-- This is a **re-ranking + expansion** step, not a replacement for vector search
-
-**Files**:
-- `src/lib/graph/graphRetriever.ts` — new file, graph-based retrieval logic
-- `src/lib/components/ChatPanel.svelte` — integrate graph results into retrieval pipeline
-- `src/lib/db/index.ts` — may need indexed queries on entity names
-
----
-
-## 4. ~~Share Vector Store with Server API Endpoint~~ ✅ DONE
-
-Server-side semantic search is implemented in `src/lib/vector/serverEmbeddings.ts` using `@xenova/transformers` (all-MiniLM-L6-v2). The `/api/query` endpoint uses it with in-memory embedding cache keyed by note ID + content length.
-
----
-
-## 5. Add Cross-Encoder Reranking
-
-**Problem**: Cosine similarity between query and chunk embeddings is a weak relevance signal. Bi-encoder embeddings are optimized for speed, not precision.
-
-**Current state**: Results ranked purely by cosine similarity + a heuristic title-match bonus.
-
-**Fix**:
-- After initial retrieval (vector + graph), run a lightweight cross-encoder reranker on the top candidates
-- Use `Xenova/ms-marco-MiniLM-L-6-v2` (cross-encoder, runs in browser via transformers.js)
-- Score each (query, chunk) pair, re-sort by cross-encoder score
-- Apply only to top ~10-15 candidates to keep latency reasonable
-
-**Files**:
-- `src/lib/vector/reranker.worker.ts` — new Web Worker for cross-encoder inference
-- `src/lib/vector/vectorStoreManager.ts` — add rerank step after search
-- `src/lib/components/ChatPanel.svelte` — wire reranker into retrieval flow
-
----
-
-## Implementation Order
-
-1. **Persist embeddings** — eliminates cold start, prerequisite for #4
-2. **Chunk overlap** — small change, immediate retrieval quality gain
-3. **Graph retrieval** — leverages existing unused infrastructure
-4. ~~**Server-side semantic search**~~ — ✅ Done (server uses `@xenova/transformers` via `serverEmbeddings.ts`)
-5. **Reranking** — final quality layer, highest complexity
+Add tests/QA cases where graph context retrieves the correct note but only note text answers the question. These should verify the answer is natural language and not graph syntax.

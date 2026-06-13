@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock dependencies
@@ -27,6 +29,26 @@ vi.mock('$lib/voice/speechRecognition', () => ({
 }));
 
 describe('ChatPanel', () => {
+	it('persists one global chat conversation regardless of selected note', () => {
+		const source = readFileSync(resolve(process.cwd(), 'src/lib/components/ChatPanel.svelte'), 'utf-8');
+
+		expect(source).toContain("const GLOBAL_CHAT_NOTE_ID = '__global__'");
+		expect(source).not.toContain('$selectedNoteId');
+		expect(source).not.toContain('currentChatNoteId');
+		expect(source).toContain('.equals(GLOBAL_CHAT_NOTE_ID)');
+	});
+
+	it('does not reload or persist transient searching placeholders as chat history', () => {
+		const source = readFileSync(resolve(process.cwd(), 'src/lib/components/ChatPanel.svelte'), 'utf-8');
+
+		expect(source).toContain('isTransientAssistantText');
+		expect(source).toContain('deleteTransientChatPlaceholders');
+		expect(source).toContain('if (msg.role === \'assistant\' && isTransientAssistantText(msg.text)) return;');
+		expect(source).toContain('updateAssistantMessage');
+		expect(source).toContain('The chat request ended before the server returned any answer');
+	});
+
+
 	it('renders with empty state message', async () => {
 		const { render } = await import('@testing-library/svelte');
 		const { default: ChatPanel } = await import('./ChatPanel.svelte');

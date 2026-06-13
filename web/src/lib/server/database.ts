@@ -102,6 +102,19 @@ export function initializeDatabase(db: SqliteDatabase): void {
       notes TEXT NOT NULL DEFAULT ''
     );
 
+    CREATE TABLE IF NOT EXISTS memory_chunks (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      noteId TEXT NOT NULL,
+      title TEXT NOT NULL,
+      chunkIndex INTEGER NOT NULL,
+      chunkText TEXT NOT NULL,
+      contentHash TEXT NOT NULL,
+      embeddingJson TEXT NOT NULL,
+      embeddingModel TEXT NOT NULL,
+      updatedAt INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_userId ON sessions(userId);
     CREATE INDEX IF NOT EXISTS idx_sessions_expiresAt ON sessions(expiresAt);
     CREATE INDEX IF NOT EXISTS idx_notes_userId ON notes(userId);
@@ -115,6 +128,8 @@ export function initializeDatabase(db: SqliteDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(userId, slug);
     CREATE INDEX IF NOT EXISTS idx_wiki_mutations_userId ON wiki_mutations(userId);
     CREATE INDEX IF NOT EXISTS idx_wiki_mutations_runId ON wiki_mutations(runId);
+    CREATE INDEX IF NOT EXISTS idx_memory_chunks_user_note ON memory_chunks(userId, noteId);
+    CREATE INDEX IF NOT EXISTS idx_memory_chunks_user ON memory_chunks(userId);
   `);
 
   try {

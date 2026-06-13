@@ -1,5 +1,5 @@
 // fake-indexeddb/auto is loaded via test-setup.ts (setupFiles in vitest config)
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 import {
@@ -8,13 +8,30 @@ import {
   searchText,
   filteredNotes,
   selectedNote,
+  updateNoteContent,
+  hasPendingEdit,
+  flushPendingSaves,
+  clearPendingTimers,
+  saveStatus,
+  saveIssue,
+  retryPendingSaves,
 } from './notes';
 
 describe('Notes Store', () => {
   beforeEach(() => {
+    clearPendingTimers();
     notes.set([]);
     selectedNoteId.set(null);
     searchText.set('');
+    saveStatus.set('saved');
+    saveIssue.set(null);
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    clearPendingTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   describe('filteredNotes', () => {
@@ -103,6 +120,69 @@ describe('Notes Store', () => {
       selectedNoteId.set(null);
 
       expect(get(selectedNote)).toBeNull();
+    });
+  });
+
+  describe('auto-save', () => {
+    it('keeps a note pending when save fails so sync cannot overwrite it', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 500 }));
+      notes.set([{ id: 'n1', title: 'N1', content: 'old', dateModified: 1, isPinned: false }]);
+
+      updateNoteContent('n1', 'new content');
+      expect(hasPendingEdit('n1')).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(hasPendingEdit('n1')).toBe(true);
+      expect(get(notes)[0].content).toBe('new content');
+    });
+
+    it('flushes pending edits immediately', async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, note: { id: 'n1', version: 2 } }), { status: 200 }));
+      notes.set([{ id: 'n1', title: 'N1', content: 'old', dateModified: 1, isPinned: false }]);
+
+      updateNoteContent('n1', 'saved content');
+      await flushPendingSaves();
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0][1]?.body).toContain('saved content');
+      expect(hasPendingEdit('n1')).toBe(false);
+      expect(get(notes)[0].version).toBe(2);
+      expect(get(saveStatus)).toBe('saved');
+    });
+
+    it('exposes conflict recovery details and lets the user retry pending saves', async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          ok: false,
+          conflict: true,
+          serverNote: { id: 'n1', title: 'Server', content: 'server copy', dateModified: 2, isPinned: false, version: 3 }
+        }), { status: 409 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          ok: true,
+          note: { id: 'n1', title: 'N1', content: 'local copy', dateModified: 4, isPinned: false, version: 4 }
+        }), { status: 200 }));
+
+      notes.set([{ id: 'n1', title: 'N1', content: 'old', dateModified: 1, isPinned: false, version: 1 }]);
+      updateNoteContent('n1', 'local copy');
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(get(saveStatus)).toBe('conflict');
+      expect(get(saveIssue)).toMatchObject({
+        kind: 'conflict',
+        noteId: 'n1',
+        serverNote: { content: 'server copy', version: 3 },
+      });
+      expect(hasPendingEdit('n1')).toBe(true);
+
+      await retryPendingSaves();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(get(saveStatus)).toBe('saved');
+      expect(get(saveIssue)).toBeNull();
+      expect(get(notes)[0].version).toBe(4);
     });
   });
 });

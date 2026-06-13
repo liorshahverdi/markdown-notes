@@ -10,7 +10,8 @@ import {
 	insertDiagram,
 	insertClassDef,
 	isTableRow,
-	isSeparatorRow
+	isSeparatorRow,
+	insertBlockAtPosition
 } from './toolbar-actions';
 
 // ── wrapSelection ──
@@ -97,6 +98,22 @@ describe('insertTable', () => {
 
 	it('inserts table directly when content ends with newline', () => {
 		expect(insertTable('Some text\n')).toBe('Some text\n' + expectedTable);
+	});
+});
+
+// ── insertBlockAtPosition ──
+
+describe('insertBlockAtPosition', () => {
+	it('inserts a block at the cursor inside existing content', () => {
+		expect(insertBlockAtPosition('## A\nitem\n## B', 'BLOCK', 9)).toBe('## A\nitem\nBLOCK\n## B');
+	});
+
+	it('adds a leading newline when the cursor is in the middle of a line', () => {
+		expect(insertBlockAtPosition('abcde', 'BLOCK', 2)).toBe('ab\nBLOCK\ncde');
+	});
+
+	it('does not add an extra trailing newline before an existing newline', () => {
+		expect(insertBlockAtPosition('a\nb', 'BLOCK', 2)).toBe('a\nBLOCK\nb');
 	});
 });
 

@@ -95,4 +95,16 @@ describe('renderMarkdown', () => {
 		expect(html).toContain('align="center"');
 		expect(html).toContain('align="right"');
 	});
+
+	it('sanitizes raw HTML and event handlers', () => {
+		const html = renderMarkdown('<img src=x onerror="alert(1)"><script>alert(1)</script>');
+		expect(html).not.toContain('onerror');
+		expect(html).not.toContain('<script');
+	});
+
+	it('removes unsafe javascript links', () => {
+		const html = renderMarkdown('[bad](javascript:alert(1))');
+		expect(html).toContain('<a>bad</a>');
+		expect(html).not.toContain('javascript:');
+	});
 });

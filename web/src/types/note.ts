@@ -9,6 +9,7 @@ export interface NoteRecord {
   ownerUsername?: string;
   folderId?: string | null;
   summary?: string | null;
+  version?: number;
 }
 
 export interface FolderRecord {

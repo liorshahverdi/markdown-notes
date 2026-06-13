@@ -1,6 +1,6 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { renderMarkdown } from '$lib/markdown/renderer';
-	import mermaid from 'mermaid';
 	import { exportDiagramSVG, exportDiagramPNG } from '$lib/markdown/diagramExporter';
 
 	function downloadBlob(blob: Blob, filename: string) {
@@ -45,42 +45,86 @@
 	let debounceTimer: ReturnType<typeof setTimeout>;
 	let previewEl: HTMLDivElement;
 
-	mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+	let mermaidInitialized = false;
+
+	function showMermaidErrors(error: unknown) {
+		if (!previewEl) return;
+		const message = error instanceof Error ? error.message : 'Unknown Mermaid rendering error';
+		previewEl.querySelectorAll<HTMLElement>('.mermaid').forEach((div) => {
+			// Keep already-rendered diagrams intact if Mermaid partially succeeded.
+			if (div.querySelector('svg')) return;
+
+			const source = div.dataset.source || div.textContent || '';
+			const errorBox = document.createElement('div');
+			errorBox.className = 'mermaid-error';
+			errorBox.setAttribute('role', 'alert');
+
+			const title = document.createElement('strong');
+			title.textContent = 'Mermaid diagram could not be rendered';
+
+			const details = document.createElement('p');
+			details.textContent = message;
+
+			const code = document.createElement('pre');
+			code.textContent = source;
+
+			errorBox.appendChild(title);
+			errorBox.appendChild(details);
+			errorBox.appendChild(code);
+			div.replaceWith(errorBox);
+		});
+	}
+
+	async function runMermaid() {
+		if (!previewEl) return;
+		const mermaidBlocks = previewEl.querySelectorAll('code.language-mermaid');
+		if (mermaidBlocks.length === 0) return;
+
+		const { default: mermaid } = await import('mermaid');
+		if (!mermaidInitialized) {
+			mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' });
+			mermaidInitialized = true;
+		}
+
+		mermaidBlocks.forEach((block) => {
+			const pre = block.parentElement;
+			if (pre && pre.tagName === 'PRE') {
+				const div = document.createElement('div');
+				const source = block.textContent || '';
+				div.className = 'mermaid';
+				div.textContent = source;
+				div.dataset.source = source;
+				pre.replaceWith(div);
+			}
+		});
+
+		try {
+			await mermaid.run({ nodes: previewEl.querySelectorAll('.mermaid') });
+		} catch (error) {
+			showMermaidErrors(error);
+			return;
+		}
+
+		const diagrams = previewEl.querySelectorAll('.mermaid');
+		diagrams.forEach((div, i) => {
+			if (div.parentElement?.classList.contains('mermaid-wrapper')) return;
+			const wrapper = document.createElement('div');
+			wrapper.className = 'mermaid-wrapper';
+			div.parentNode!.insertBefore(wrapper, div);
+			wrapper.appendChild(div);
+			addExportButtons(wrapper, i);
+		});
+	}
 
 	$effect(() => {
 		// Access markdown to track it as a dependency
 		const md = markdown;
 		clearTimeout(debounceTimer);
-		debounceTimer = setTimeout(() => {
+		debounceTimer = setTimeout(async () => {
 			html = renderMarkdown(md);
-			// After DOM update, run mermaid on any mermaid blocks
-			requestAnimationFrame(() => {
-				if (previewEl) {
-					const mermaidBlocks = previewEl.querySelectorAll('code.language-mermaid');
-					if (mermaidBlocks.length > 0) {
-						mermaidBlocks.forEach((block) => {
-							const pre = block.parentElement;
-							if (pre && pre.tagName === 'PRE') {
-								const div = document.createElement('div');
-								div.className = 'mermaid';
-								div.textContent = block.textContent || '';
-								pre.replaceWith(div);
-							}
-						});
-						mermaid.run({ nodes: previewEl.querySelectorAll('.mermaid') }).then(() => {
-							const diagrams = previewEl.querySelectorAll('.mermaid');
-							diagrams.forEach((div, i) => {
-								if (div.parentElement?.classList.contains('mermaid-wrapper')) return;
-								const wrapper = document.createElement('div');
-								wrapper.className = 'mermaid-wrapper';
-								div.parentNode!.insertBefore(wrapper, div);
-								wrapper.appendChild(div);
-								addExportButtons(wrapper, i);
-							});
-						});
-					}
-				}
-			});
+			// After DOM update, lazily load and run mermaid only if diagrams exist.
+			await tick();
+			runMermaid();
 		}, 300);
 
 		return () => {
@@ -289,6 +333,31 @@
 
 	.preview-content :global(.mermaid-export-bar button:hover) {
 		background: rgba(0, 0, 0, 0.12);
+	}
+
+	.preview-content :global(.mermaid-error) {
+		border: 1px solid #f2ba33;
+		border-left-width: 4px;
+		border-radius: 8px;
+		background: rgba(242, 186, 51, 0.12);
+		padding: 12px 14px;
+		margin: 1em 0;
+		color: var(--preview-text, #1d1d1f);
+	}
+
+	.preview-content :global(.mermaid-error strong) {
+		display: block;
+		margin-bottom: 4px;
+	}
+
+	.preview-content :global(.mermaid-error p) {
+		margin: 0 0 8px;
+		color: var(--preview-secondary, #666);
+	}
+
+	.preview-content :global(.mermaid-error pre) {
+		margin: 0;
+		white-space: pre-wrap;
 	}
 
 	/* Dark mode — class-based */

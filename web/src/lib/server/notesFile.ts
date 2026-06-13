@@ -117,7 +117,7 @@ export function upsertNote(
     }
   }
 
-  const newVersion = ((note as any).version ?? 0) + 1;
+  const newVersion = existing ? existing.version + 1 : ((note as any).version ?? 0) + 1;
 
   db.prepare(
     `INSERT INTO notes (id, userId, title, content, dateModified, isPinned, isShared, folderId, version, summary)

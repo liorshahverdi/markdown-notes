@@ -1,130 +1,69 @@
-# MarkdownNotes
+# MarkdownNotes Web
 
-MarkdownNotes is an LLM-maintained local wiki for turning private notes and source material into a durable, inspectable knowledge base.
+MarkdownNotes Web is a local-first markdown notes app with a graph-powered memory layer and optional local-model assistance through Ollama.
 
-The product is no longer positioned as a generic note app with RAG bolted on. The core architecture is:
+The current product center is no longer a wiki-first ingestion console. The default workflow is:
 
-1. Preserve imported raw sources exactly.
-2. Generate and maintain markdown wiki pages from those sources.
-3. Answer with wiki-first query retrieval before falling back to raw sources.
-4. File useful answers back into the wiki.
-5. Run wiki health checks so generated knowledge stays auditable.
+1. Write or import markdown notes.
+2. Persist notes in a local per-user vault.
+3. Extract entities, relationships, Mermaid diagrams, and provenance into a knowledge graph.
+4. Ask chat questions against notes + graph memory by default.
+5. Use the experimental wiki/source ingestion system only when explicitly needed.
+6. Generate skills from meaningful graph context.
 
-Built with SvelteKit, TypeScript, SQLite, markdown vault files, and local LLMs through Ollama.
-
----
-
-## Product model
-
-### Raw sources
-
-Raw sources are immutable imported materials. They can be pasted markdown, articles, transcripts, PDFs, web clips, manual text, or migrated legacy notes.
-
-Each raw source is stored under the managed vault and cached in SQLite as a `raw_sources` row. Source imports preserve provenance with metadata such as `sourceType`, `sourceDate`, `tags`, `rawPath`, and `summaryPageId`.
-
-### Wiki pages
-
-Wiki pages are generated markdown artifacts under `wiki/` with SQLite metadata in `wiki_pages`.
-
-Current page types include:
-
-- `source-summary` pages under `wiki/sources/`
-- `entity` pages under `wiki/entities/`
-- `concept` pages under `wiki/concepts/`
-- `question` pages under `wiki/questions/`
-- system pages such as `wiki/index.md` and `wiki/log.md`
-
-The markdown files are meant to stay human-readable and portable. SQLite is a fast cache and query index, not the only source of truth.
-
-### Wiki mutations
-
-Every ingest, answer filing, and maintenance pass can create a `wiki_mutations` row describing:
-
-- trigger type
-- source IDs involved
-- changed page IDs
-- created page IDs
-- human-readable notes
-
-This gives the local wiki an audit trail.
+Built with SvelteKit, Svelte 5, TypeScript, SQLite, markdown vault files, CodeMirror, Mermaid, and Ollama.
 
 ---
 
-## Core workflows
+## Current product model
 
-### 1. Source ingestion
+### Notes and vault files
 
-Import text through the Sources panel or `/api/sources/import`.
-
-The ingest pipeline:
-
-1. writes the raw source under `raw/`
-2. creates a source-summary wiki page
-3. extracts deterministic entity/concept suggestions
-4. creates or updates related entity/concept pages
-5. updates `wiki/index.md`
-6. appends `wiki/log.md`
-7. records a wiki mutation
-
-### 2. Wiki-first query
-
-`POST /api/query` searches wiki pages before raw source fallback.
-
-The query pipeline:
-
-- matches title, slug, summary, and markdown body
-- builds answer context from wiki pages first
-- falls back to raw sources only when wiki coverage is weak
-- returns citation metadata and coverage state to the UI
-
-The chat UI displays citation kind and whether fallback was used.
-
-### 3. Answer filing
-
-After a cited assistant answer, the UI can file the answer back into the wiki.
-
-The answer filing workflow:
-
-- rejects insufficient/error/no-citation answers
-- drafts deterministic question pages
-- saves useful answers under `wiki/questions/`
-- updates index/log pages
-- records a query-triggered mutation
-
-### 4. Wiki health
-
-The lint system checks generated wiki quality.
-
-Current findings include:
-
-- orphan pages with no backlinks or source citations
-- broken Obsidian-style wiki links
-- stale low-confidence or open-question pages
-- deterministic `Claim: key = true/false` contradictions
-
-The Wiki Health panel fetches `/api/wiki/lint` and renders actionable findings.
-
-### 5. Legacy note migration
-
-Legacy notes remain available while the new model ships.
-
-`POST /api/migration/notes-to-sources` imports existing notes as `note` raw sources without deleting the original notes. The migration is idempotent using `legacy-note:<id>` tags, so repeating it does not duplicate raw sources.
-
----
-
-## Managed vault layout
-
-Per user, the app creates:
+Notes are the primary user-authored knowledge source. Each authenticated local user gets a managed vault under:
 
 ```text
 data/vaults/<user-id>/
-├── raw/       # imported source content
-├── wiki/      # generated markdown wiki pages
-├── schema/    # generated schema documentation
-└── state/     # future rebuild/checkpoint state
+├── notes/     # canonical markdown notes
+├── raw/       # imported experimental source content
+├── wiki/      # generated experimental wiki pages
+├── schema/    # generated schema docs
+└── state/     # runtime/rebuild state
 ```
 
-Schema docs can be generated into `schema/` and describe raw sources, wiki pages, and wiki mutations.
+Set `MARKDOWN_NOTES_DATA_DIR` to move runtime data out of `web/data`.
+
+### Knowledge graph
+
+The graph is built from notes, links, tags, folders, Mermaid diagrams, extracted entities, and relation provenance. It powers:
+
+- graph visualization under `/graph`
+- note/detail context
+- chat memory retrieval expansion
+- skill candidate generation
+- low-confidence/model-inferred edge review helpers
+
+The review queue exists, but it is not yet a primary workflow. Treat it as an advanced/experimental surface until the graph UI is redesigned around evidence and review.
+
+### Chat memory
+
+Default chat uses notes + graph memory, not generated wiki pages.
+
+`POST /api/query` now:
+
+- reads the authenticated user's notes
+- performs fast lexical/title matching
+- uses persisted server-side memory chunks/embeddings when available
+- expands context with graph evidence
+- streams an NDJSON response immediately so the UI does not appear hung
+- synthesizes simple high-confidence answers without waiting for Ollama when safe
+- otherwise routes to Ollama through loopback-only server-side requests
+- presents graph links as supporting context, not as answers
+
+The chat UI streams tokens into a single assistant message, displays memory coverage such as `Memory evidence: 1 note · 3 graph edges`, and has an opt-in checkbox for experimental wiki context.
+
+### Experimental wiki/source subsystem
+
+The previous LLM-maintained local wiki remains available under `/experimental/wiki` and maintenance routes. It supports raw source import, generated wiki pages, wiki lint, answer filing, and legacy note migration, but it is no longer the default chat retrieval path.
 
 ---
 
@@ -132,17 +71,21 @@ Schema docs can be generated into `schema/` and describe raw sources, wiki pages
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/sources` | List raw sources |
-| POST | `/api/sources` | Import a raw source via the source import route |
-| POST | `/api/sources/import` | Import source text and create/update wiki pages |
-| GET | `/api/wiki/index` | Read generated `wiki/index.md` |
-| GET | `/api/wiki/log` | Read generated `wiki/log.md` |
-| GET | `/api/wiki/mutations/latest` | Read latest wiki mutation |
-| GET | `/api/wiki/lint` | Run wiki health checks |
-| POST | `/api/wiki/file-answer` | File a cited answer as a question page |
-| POST | `/api/migration/notes-to-sources` | Migrate legacy notes into raw sources |
-| POST | `/api/query` | Ask a wiki-first local LLM question |
-| GET/POST | `/api/notes` | Legacy notes API retained during migration |
+| GET/POST/DELETE | `/api/notes` | Local note CRUD and memory indexing |
+| POST | `/api/query` | Default notes+graph chat query; streams with `stream: true` |
+| GET | `/api/graph` | Graph data built from notes |
+| POST | `/api/skills` | Skill generation/export workflows |
+| GET | `/api/ollama/health` | Loopback Ollama health proxy |
+| POST | `/api/ollama/chat` | Loopback Ollama chat proxy |
+| POST | `/api/ollama/embed` | Loopback Ollama embeddings proxy |
+| POST | `/api/ollama/json` | Loopback Ollama JSON helper |
+| GET/POST | `/api/sources` | Experimental raw-source listing/import |
+| POST | `/api/sources/import` | Experimental source-to-wiki ingest |
+| GET | `/api/wiki/index` | Experimental generated wiki index |
+| GET | `/api/wiki/log` | Experimental generated wiki log |
+| GET | `/api/wiki/lint` | Experimental wiki health checks |
+| POST | `/api/wiki/file-answer` | File cited answers to experimental wiki pages |
+| POST | `/api/migration/notes-to-sources` | Experimental/idempotent legacy note migration |
 
 ---
 
@@ -152,31 +95,35 @@ Schema docs can be generated into `schema/` and describe raw sources, wiki pages
 | --- | --- |
 | Framework | SvelteKit + TypeScript |
 | UI | Svelte 5 + Tailwind CSS |
-| Local LLM | Ollama |
+| Local LLM | Ollama over loopback server proxies |
 | Persistence | SQLite + managed markdown vault |
 | Editor | CodeMirror 6 |
-| Experimental graph | legacy entity/skills/self-improvement tooling under `/experimental/knowledge-graph` |
-| Testing | Vitest + jsdom + @testing-library/svelte |
+| Diagrams | Mermaid |
+| Graph | deterministic extraction + provenance helpers |
+| Vector memory | Ollama embeddings with Xenova fallback paths |
+| Testing | Vitest + jsdom + @testing-library/svelte; ad hoc Playwright QA |
 
 ---
 
 ## Getting started
 
-Use Node.js 22+ for local development in this repo.
+Use Node.js 22+.
 
 ```bash
 cd web
-npm install
+npm ci
 npm run dev
 ```
 
-If Ollama is used for query generation:
+Optional local models:
 
 ```bash
 ollama pull llama3.2:3b
+ollama pull nomic-embed-text
+ollama serve
 ```
 
-The app runs at `http://localhost:5173`.
+The app runs at `http://localhost:5173` by default.
 
 ---
 
@@ -184,20 +131,22 @@ The app runs at `http://localhost:5173`.
 
 ```bash
 cd web
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npm run check
+npm run check
+npm test
+npm run build
 ```
 
 Useful targeted suites:
 
 ```bash
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/ingest
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/query
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/lint
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx vitest run src/lib/wiki/migration
+npm test -- --run src/lib/memory
+npm test -- --run src/routes/api/query
+npm test -- --run src/lib/vector/ragPipeline.streaming.test.ts
+npm test -- --run src/lib/graph
+npm test -- --run src/lib/wiki/query
 ```
 
-See `TESTING_GUIDE.md` for the full ingest/query/lint/migration acceptance checklist.
+See `TESTING_GUIDE.md` for manual and automated acceptance guidance.
 
 ---
 
@@ -206,30 +155,26 @@ See `TESTING_GUIDE.md` for the full ingest/query/lint/migration acceptance check
 ```text
 src/
 ├── lib/
-│   ├── components/       # app panels, chat, source/wiki/health/migration UI
-│   ├── server/           # auth, database, vault helpers
-│   ├── stores/           # Svelte stores, including sources and legacy notes
-│   ├── wiki/
-│   │   ├── ingest/       # source import, summaries, index/log, page integration
-│   │   ├── query/        # wiki-first retrieval, answer building, answer filing
-│   │   ├── lint/         # wiki health detectors and aggregator
-│   │   ├── migration/    # legacy notes to raw sources
-│   │   ├── schema/       # generated schema documentation helpers
-│   │   └── templates/    # deterministic markdown templates
-│   └── types/
-└── routes/api/           # source/wiki/query/migration endpoints
+│   ├── components/       # editor, chat, graph, skill, wiki/maintenance UI
+│   ├── graph/            # extraction, scoring, review, provenance, inference helpers
+│   ├── memory/           # notes+graph chat retrieval and synthesized recall
+│   ├── server/           # auth, database, vault, graph snapshot, note file helpers
+│   ├── stores/           # Svelte stores for notes, folders, graph, chat, rag config
+│   ├── vector/           # RAG prompt assembly, embeddings, vector store/reranker helpers
+│   ├── wiki/             # experimental source/wiki ingest, query, lint, migration
+│   └── skills/           # graph-derived skill generation/export helpers
+└── routes/
+    ├── graph/            # graph page entry
+    ├── maintenance/      # maintenance/experimental admin surfaces
+    ├── skills/           # skill views
+    └── api/              # notes/query/graph/ollama/source/wiki endpoints
 ```
 
 ---
 
-## Current scope and non-goals
+## Current non-goals
 
-The first success criterion is architectural correctness: raw sources, generated wiki pages, wiki-first answers, answer filing, linting, and safe migration.
-
-Non-goals for this first pivot:
-
-- perfect PDF/image ingestion
-- production-grade multi-user collaboration
-- flawless semantic contradiction detection
-- automated web-feed ingestion
-- remote sync
+- Exposing the app as a hardened multi-user production service.
+- Treating generated wiki pages as the default source of truth.
+- Returning ungrounded chat answers when notes/graph evidence is missing.
+- Making the review queue the primary graph UX before the graph exploration flow is redesigned.

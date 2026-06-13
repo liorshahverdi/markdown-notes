@@ -1,5 +1,43 @@
 import type { SkillRecord } from './skillTemplate';
 
+export interface SkillArtifactFile {
+  path: string;
+  content: string;
+  type: 'markdown' | 'json';
+}
+
+export function slugifySkillName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'skill';
+}
+
+export function buildSkillArtifactFiles(skill: SkillRecord): SkillArtifactFile[] {
+  const slug = slugifySkillName(skill.name);
+  const basePath = `skills/${slug}`;
+  const markdown = skill.content?.trim() ? skill.content : `# ${skill.name}\n\n## Evidence\nNo evidence recorded.\n`;
+  const metadata = {
+    id: skill.id,
+    slug,
+    name: skill.name,
+    domain: skill.domain,
+    type: skill.type,
+    confidence: skill.confidence,
+    sourceNoteIds: skill.sourceNoteIds,
+    parentSkillIds: skill.parentSkillIds,
+    dependencies: skill.dependencies,
+    createdAt: skill.createdAt,
+    updatedAt: skill.updatedAt,
+  };
+
+  return [
+    { path: `${basePath}/SKILL.md`, content: markdown.endsWith('\n') ? markdown : `${markdown}\n`, type: 'markdown' },
+    { path: `${basePath}/metadata.json`, content: `${JSON.stringify(metadata, null, 2)}\n`, type: 'json' },
+  ];
+}
+
 /**
  * Export a skill as a markdown file with YAML frontmatter.
  */

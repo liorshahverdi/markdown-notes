@@ -19,6 +19,12 @@ export default defineConfig({
 	worker: {
 		format: 'es'
 	},
+	build: {
+		// Heavy libraries are now lazy-loaded behind routes/workers. Keep the warning
+		// threshold above those isolated chunks while still catching accidental
+		// multi-megabyte app bundles.
+		chunkSizeWarningLimit: 900,
+	},
 	resolve: {
 		conditions: ['browser']
 	},

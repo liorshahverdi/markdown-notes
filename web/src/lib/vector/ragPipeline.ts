@@ -227,7 +227,16 @@ export interface ChatMessage {
   content: string;
 }
 
-export const RAG_SYSTEM_PROMPT = `You are a helpful assistant for a personal notes app. Relevant notes from the user's collection are included below their question. Answer using the provided note content and cite which note(s) the information comes from.`;
+export const RAG_SYSTEM_PROMPT = `You are the chat assistant for a local-first personal notes app. Answer from the provided notes and graph context only.
+
+Rules:
+- Start with the direct answer; do not describe your process.
+- Prefer the note whose title exactly matches entities in the question.
+- If the user asks for risks, implications, next steps, or what to watch for, infer concise grounded takeaways from the notes instead of saying there are no explicit risks.
+- Cite note titles inline when useful.
+- Use graph links only as supporting navigation/context; answer factual questions from note text first.
+- Never answer with raw graph edge syntax like "A --mentioned_in--> B". If graph links are all you have, say the notes do not contain enough detail.
+- If the notes truly do not contain enough evidence, say what is missing and which searched notes were relevant.`;
 
 /**
  * Build a messages array for the /api/chat endpoint.
@@ -256,13 +265,10 @@ export function buildRAGMessages(
     }
   }
 
-  // Build the user message with context
+  // Build the user message with note text first. Graph context is appended later
+  // as supporting evidence so the model does not confuse relationship labels
+  // with the answer to factual questions.
   let userContent = '';
-
-  // Graph context (if available)
-  if (graphContext) {
-    userContent += graphContext + '\n\n';
-  }
 
   // Note summaries (if available, gives LLM orientation)
   if (noteSummaries && noteSummaries.length > 0) {
@@ -319,6 +325,13 @@ export function buildRAGMessages(
     userContent += section;
   }
 
+  if (graphContext) {
+    const graphSection = `\n---\nSupporting graph links (navigation context only; do not answer from these alone):\n${graphContext}\n`;
+    if (userContent.length + graphSection.length + footer.length <= MAX_PROMPT_CHARS) {
+      userContent += graphSection;
+    }
+  }
+
   userContent += footer;
   messages.push({ role: 'user', content: userContent });
 
@@ -359,9 +372,14 @@ export async function* queryOllama(
   // Support both messages array (new) and string prompt (legacy)
   const isMessages = Array.isArray(messagesOrPrompt);
   const endpoint = isMessages ? '/api/chat' : '/api/generate';
+  const options = {
+    temperature: 0,
+    num_predict: 512,
+    num_ctx: 8192,
+  };
   const body = isMessages
-    ? { model: config.model, messages: messagesOrPrompt, stream: true, keep_alive: -1 }
-    : { model: config.model, prompt: messagesOrPrompt, stream: true, keep_alive: -1 };
+    ? { model: config.model, messages: messagesOrPrompt, stream: true, keep_alive: '10m', options }
+    : { model: config.model, prompt: messagesOrPrompt, stream: true, keep_alive: '10m', options };
 
   const response = await fetch(`${config.ollamaUrl}${endpoint}`, {
     method: 'POST',
@@ -381,39 +399,60 @@ export async function* queryOllama(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
+
+  async function readWithTimeout() {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let abortHandler: (() => void) | undefined;
+    try {
+      return await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(`Ollama stream stalled — no data received for ${readTimeoutMs / 1000} s`)), readTimeoutMs);
+          abortHandler = () => reject(signal?.reason ?? new Error('Ollama request aborted'));
+          signal?.addEventListener('abort', abortHandler, { once: true });
+        }),
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (abortHandler) signal?.removeEventListener('abort', abortHandler);
+    }
+  }
+
+  function parseLine(line: string): { token: string; done: boolean } | null {
+    if (!line.trim()) return null;
+    try {
+      const parsed = JSON.parse(line);
+      return {
+        token: parsed.message?.content ?? parsed.response ?? '',
+        done: parsed.done === true,
+      };
+    } catch {
+      return null;
+    }
+  }
 
   while (true) {
     // Per-read timeout: if no data arrives within READ_TIMEOUT_MS the stream
     // is considered stalled and we abort rather than hanging forever.
-    const readResult = await Promise.race([
-      reader.read(),
-      new Promise<never>((_, reject) => {
-        const id = setTimeout(() => reject(new Error(`Ollama stream stalled — no data received for ${readTimeoutMs / 1000} s`)), readTimeoutMs);
-        // If the caller already aborted, clean up immediately.
-        signal?.addEventListener('abort', () => { clearTimeout(id); reject(signal.reason); }, { once: true });
-      }),
-    ]);
-
-    const { done, value } = readResult;
+    const { done, value } = await readWithTimeout();
     if (done) break;
 
-    const text = decoder.decode(value, { stream: true });
-    const lines = text.split('\n').filter((l) => l.trim().length > 0);
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
 
     for (const line of lines) {
-      try {
-        const parsed = JSON.parse(line);
-        // /api/chat returns content in message.content, /api/generate returns in response
-        const token = parsed.message?.content ?? parsed.response;
-        if (token) {
-          yield token;
-        }
-        if (parsed.done) return;
-      } catch {
-        // skip malformed lines
-      }
+      const parsed = parseLine(line);
+      if (!parsed) continue;
+      if (parsed.token) yield parsed.token;
+      if (parsed.done) return;
     }
   }
+
+  buffer += decoder.decode();
+  const parsed = parseLine(buffer);
+  if (parsed?.token) yield parsed.token;
 }
 
 export async function checkOllamaHealth(url: string): Promise<boolean> {

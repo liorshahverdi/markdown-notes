@@ -4,6 +4,7 @@ import { readNotes, readNote, upsertNote, deleteNote } from '$lib/server/notesFi
 import { getDb } from '$lib/server/database';
 import { triggerSummaryGeneration } from '$lib/server/noteSummarizer';
 import { syncNoteToSource } from '$lib/wiki/migration/notesToSources';
+import { indexNoteMemory, deleteNoteMemory } from '$lib/memory/localMemoryIndex';
 import { createHash } from 'crypto';
 
 export const GET: RequestHandler = async ({ url, request, locals }) => {
@@ -76,8 +77,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     }
     // Trigger async summary generation (non-blocking)
     triggerSummaryGeneration(userId, body.note.id, body.note.title, body.note.content);
-    syncNoteToSource({ db: getDb(), userId, baseDir: 'data', note: body.note });
-    return json({ ok: true });
+    const savedNote = readNote(userId, body.note.id);
+    const noteForIndex = savedNote ?? body.note;
+    syncNoteToSource({ db: getDb(), userId, baseDir: 'data', note: noteForIndex });
+    void indexNoteMemory({ userId, note: noteForIndex }).catch((err) => {
+      console.warn('[Notes] Failed to update local memory index', err);
+    });
+    return json({ ok: true, note: savedNote });
   }
 
   // Bulk write (for migration)
@@ -98,5 +104,6 @@ export const DELETE: RequestHandler = async ({ url, locals }) => {
     throw error(400, 'Missing note id');
   }
   const deleted = deleteNote(userId, id);
+  if (deleted) deleteNoteMemory(userId, id);
   return json({ ok: deleted });
 };

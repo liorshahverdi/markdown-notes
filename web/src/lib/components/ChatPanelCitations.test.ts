@@ -57,4 +57,13 @@ describe('ChatPanel wiki citations', () => {
     expect(getByTestId('assistant-message').textContent).toContain('wiki-page');
     expect(getByTestId('assistant-message').textContent).toContain('Ada Lovelace');
   });
+
+  it('renders note-memory coverage objects without leaking [object Object]', async () => {
+    const [{ readFileSync }, { resolve }] = await Promise.all([import('node:fs'), import('node:path')]);
+    const source = readFileSync(resolve(process.cwd(), 'src/lib/components/ChatPanel.svelte'), 'utf-8');
+
+    expect(source).toContain('Memory evidence:');
+    expect(source).toContain('coverage.noteCount');
+    expect(source).not.toContain('Wiki coverage: {msg.coverage}');
+  });
 });

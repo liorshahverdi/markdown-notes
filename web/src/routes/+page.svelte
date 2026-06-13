@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { page } from '$app/stores';
 	import {
 		loadNotes,
 		startSync,
@@ -12,6 +13,9 @@
 		sharedNotes,
 		notes,
 		importNotes,
+		saveStatus,
+		saveIssue,
+		retryPendingSaves,
 	} from '$lib/stores/notes';
 	import { loadFolders } from '$lib/stores/folders';
 	import { initVectorStore } from '$lib/vector/vectorStoreManager';
@@ -24,12 +28,6 @@
 	import Preview from '$lib/components/Preview.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
-	import SourcesPane from '$lib/components/SourcesPane.svelte';
-	import IngestReviewPanel from '$lib/components/IngestReviewPanel.svelte';
-	import WikiIndexView from '$lib/components/WikiIndexView.svelte';
-	import WikiLogView from '$lib/components/WikiLogView.svelte';
-	import LintFindingsPanel from '$lib/components/LintFindingsPanel.svelte';
-	import LegacyMigrationPanel from '$lib/components/LegacyMigrationPanel.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import { chatOpen } from '$lib/stores/chat';
 	import { getHomeShellPolicy } from '$lib/navigation/homeShell';
@@ -38,6 +36,7 @@
 	let isDictating = $state(false);
 	let dictationManager: DictationManager | null = null;
 	let insertAtCursor: ((text: string) => void) | null = null;
+	let insertBlockAtCursor: ((markdown: string) => void) | null = null;
 	let setGhostText: ((text: string) => void) | null = null;
 	let clearGhostText: (() => void) | null = null;
 
@@ -122,12 +121,20 @@
 	function handleRegisterInsert(
 		insert: (text: string) => void,
 		setGhost: (text: string) => void,
-		clearGhost: () => void
+		clearGhost: () => void,
+		insertBlock: (markdown: string) => void
 	) {
 		insertAtCursor = insert;
+		insertBlockAtCursor = insertBlock;
 		setGhostText = setGhost;
 		clearGhostText = clearGhost;
 	}
+
+	$effect(() => {
+		if ($page.url.searchParams.get('chat') === '1') {
+			chatOpen.set(true);
+		}
+	});
 
 	// Stop dictation on note switch
 	let prevNoteId: string | null = null;
@@ -298,6 +305,7 @@
 					readOnly={isReadOnly}
 					onToggleShare={isReadOnly ? undefined : handleToggleShare}
 					onImageInsert={isReadOnly ? undefined : (md) => insertAtCursor?.(md)}
+					onMarkdownBlockInsert={isReadOnly ? undefined : (md) => insertBlockAtCursor?.(md)}
 				/>
 				{#if !isReadOnly}
 					<div class="flex-1 overflow-hidden">
@@ -308,7 +316,12 @@
 							onImageInsert={isReadOnly ? undefined : (md) => insertAtCursor?.(md)}
 						/>
 					</div>
-					<StatusBar content={$selectedNote.content} />
+					<StatusBar
+						content={$selectedNote.content}
+						saveStatus={$saveStatus}
+						saveIssue={$saveIssue}
+						onRetry={retryPendingSaves}
+					/>
 				{/if}
 			</div>
 
@@ -350,14 +363,6 @@
 							Browse legacy notes
 						</button>
 					{/if}
-					<div class="grid w-full max-w-6xl grid-cols-1 gap-4 xl:grid-cols-2">
-						<SourcesPane />
-						<IngestReviewPanel />
-						<WikiIndexView />
-						<WikiLogView />
-						<LintFindingsPanel />
-						<LegacyMigrationPanel />
-					</div>
 				</div>
 			{/if}
 		</div>

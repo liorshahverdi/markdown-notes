@@ -63,24 +63,27 @@
 
 	onMount(() => {
 		restoreTheme();
-		checkHealth();
-		healthInterval = setInterval(checkHealth, 30_000);
 
-		// Initialize wake word detector if enabled in voice settings
-		try {
-			const voicePrefs = loadVoicePreferences();
-			if (voicePrefs.activationMode === 'always-listening') {
-				wakeWordDetector = createWakeWordDetector({
-					wakePhrase: voicePrefs.wakePhrase || 'Hey Notes',
-					onWakeWord() {
-						chatOpen.update((v) => !v || v); // open chat panel
-						chatOpen.set(true);
-					},
-				});
-				wakeWordDetector.start();
+		if (!isLoginPage) {
+			checkHealth();
+			healthInterval = setInterval(checkHealth, 30_000);
+
+			// Initialize wake word detector if enabled in voice settings
+			try {
+				const voicePrefs = loadVoicePreferences();
+				if (voicePrefs.activationMode === 'always-listening') {
+					wakeWordDetector = createWakeWordDetector({
+						wakePhrase: voicePrefs.wakePhrase || 'Hey Notes',
+						onWakeWord() {
+							chatOpen.update((v) => !v || v); // open chat panel
+							chatOpen.set(true);
+						},
+					});
+					wakeWordDetector.start();
+				}
+			} catch {
+				// Wake word not supported in this browser
 			}
-		} catch {
-			// Wake word not supported in this browser
 		}
 	});
 

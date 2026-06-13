@@ -100,6 +100,22 @@ function resolveEntityId(
   return matches?.[0] ?? null;
 }
 
+function relationExcerpt(content: string, fromName: string, toName: string, explicit?: string): string {
+  if (explicit) return explicit;
+  const lines = content.split('\n').map((line) => line.trim()).filter(Boolean);
+  const from = normalizeName(fromName);
+  const to = normalizeName(toName);
+  return (
+    lines.find((line) => {
+      const lower = normalizeName(line);
+      return lower.includes(from) && lower.includes(to);
+    }) ??
+    lines.find((line) => normalizeName(line).includes(from)) ??
+    lines.find((line) => normalizeName(line).includes(to)) ??
+    content.slice(0, 240)
+  );
+}
+
 export function buildGraphSnapshot(notes: NoteRecord[], folders: FolderRecord[]): GraphSnapshot {
   const folderPaths = buildFolderPathIndex(folders);
   const entityMap = new Map<string, GraphEntity>();
@@ -129,12 +145,29 @@ export function buildGraphSnapshot(notes: NoteRecord[], folders: FolderRecord[])
       if (!fromEntityId || !toEntityId) continue;
 
       const relationId = `${relation.type}:${fromEntityId}:${toEntityId}`;
-      if (!relationMap.has(relationId)) {
+      const provenance = {
+        noteId: note.id,
+        excerpt: relationExcerpt(note.content, relation.fromName, relation.toName, relation.excerpt),
+        method: relation.method ?? 'regex' as const,
+      };
+      const existing = relationMap.get(relationId);
+      if (existing) {
+        const alreadyHasNote = existing.provenance?.some(
+          (item) => item.noteId === provenance.noteId && item.excerpt === provenance.excerpt
+        );
+        if (!alreadyHasNote) existing.provenance = [...(existing.provenance ?? []), provenance];
+        existing.updatedAt = Math.max(existing.updatedAt ?? 0, note.dateModified);
+      } else {
         relationMap.set(relationId, {
           id: relationId,
           fromEntityId,
           toEntityId,
           type: relation.type,
+          confidence: relation.confidence ?? (relation.method === 'diagram' ? 0.9 : 0.75),
+          accepted: relation.method !== 'llm',
+          createdAt: note.dateModified || Date.now(),
+          updatedAt: note.dateModified || Date.now(),
+          provenance: [provenance],
         });
       }
     }

@@ -18,25 +18,25 @@
 	</div>
 
 	<div class="empty-state__copy">
-		<h2 class="empty-state__title">Build your local markdown wiki.</h2>
+		<h2 class="empty-state__title">Write markdown notes and diagrams.</h2>
 		<p class="empty-state__sub">
-			Import sources, maintain generated wiki pages,<br />
-			and keep markdown vault files organized in folders.
+			Create local-first notes, build a knowledge graph,<br />
+			and use chat memory to turn connections into agent skills.
 		</p>
 	</div>
 
 	<div class="empty-state__hints">
 		<div class="empty-state__hint">
-			<span class="empty-state__hint-label">Import sources</span>
+			<span class="empty-state__hint-label">Create a note</span>
 		</div>
 		<div class="empty-state__hint">
-			<span class="empty-state__hint-label">Markdown vault</span>
+			<span class="empty-state__hint-label">Knowledge graph</span>
 		</div>
 		<div class="empty-state__hint">
-			<span class="empty-state__hint-label">Folders</span>
+			<span class="empty-state__hint-label">Chat memory</span>
 		</div>
 		<div class="empty-state__hint">
-			<span class="empty-state__hint-label">Review wiki health</span>
+			<span class="empty-state__hint-label">Agent skills</span>
 		</div>
 	</div>
 </div>

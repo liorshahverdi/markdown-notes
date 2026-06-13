@@ -9,26 +9,25 @@ function readDoc(relativePath: string): string {
 }
 
 describe('product documentation positioning', () => {
-  it('positions the product as a local LLM-maintained wiki rather than generic note RAG', () => {
+  it('positions the product as note-first with graph memory and an experimental wiki subsystem', () => {
     const readme = readDoc('README.md');
 
-    expect(readme).toContain('LLM-maintained local wiki');
-    expect(readme).toContain('raw sources');
-    expect(readme).toContain('wiki pages');
-    expect(readme).toContain('wiki-first query');
-    expect(readme).toContain('answer filing');
-    expect(readme).toContain('wiki health');
-    expect(readme).not.toContain('A local-first, AI-augmented markdown note-taking app');
+    expect(readme).toContain('local-first markdown notes app');
+    expect(readme).toContain('Default chat uses notes + graph memory');
+    expect(readme).toContain('Knowledge graph');
+    expect(readme).toContain('Experimental wiki/source subsystem');
+    expect(readme).toContain('raw source import');
+    expect(readme).not.toContain('The core architecture is:');
   });
 
-  it('documents the ingest/query/lint/migration verification workflow', () => {
+  it('documents note/chat/graph workflows plus opt-in wiki verification', () => {
     const guide = readDoc('TESTING_GUIDE.md');
 
-    expect(guide).toContain('Local LLM Wiki Workflows');
+    expect(guide).toContain('Notes workflow checklist');
+    expect(guide).toContain('Chat memory checklist');
+    expect(guide).toContain('Knowledge graph checklist');
+    expect(guide).toContain('Experimental wiki/source checklist');
     expect(guide).toContain('Import a raw source');
-    expect(guide).toContain('Verify wiki-first query citations');
-    expect(guide).toContain('File an answer back to the wiki');
     expect(guide).toContain('Run wiki lint');
-    expect(guide).toContain('Migrate legacy notes');
   });
 });
