@@ -17,3 +17,4 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 - Normal note saves no longer sync notes into the experimental wiki/source subsystem.
 - CLI commands can use saved local API tokens from `~/.markdown-notes/config.json` or `MARKDOWN_NOTES_TOKEN`.
+- CLI non-interactive commands now support `--json` for scripting and future MCP adapters.

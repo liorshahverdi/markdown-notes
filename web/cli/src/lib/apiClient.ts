@@ -1,3 +1,19 @@
+export class APIError extends Error {
+  name = 'APIError';
+
+  constructor(
+    public status: number,
+    public statusText: string,
+    public body?: unknown
+  ) {
+    const bodyMessage =
+      body && typeof body === 'object' && 'error' in body && typeof (body as { error?: unknown }).error === 'string'
+        ? `: ${(body as { error: string }).error}`
+        : '';
+    super(`API error: ${status} ${statusText}${bodyMessage}`);
+  }
+}
+
 export interface NoteRecord {
   id: string;
   title: string;
@@ -79,14 +95,13 @@ export class APIClient {
 
   private async parseJsonResponse<T>(res: Response): Promise<T> {
     if (!res.ok) {
-      let detail = '';
+      let body: unknown;
       try {
-        const body = (await res.json()) as { error?: string };
-        detail = body.error ? `: ${body.error}` : '';
+        body = await res.json();
       } catch {
-        // ignore non-JSON error bodies
+        body = undefined;
       }
-      throw new Error(`API error: ${res.status} ${res.statusText}${detail}`);
+      throw new APIError(res.status, res.statusText, body);
     }
     return res.json() as Promise<T>;
   }

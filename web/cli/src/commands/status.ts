@@ -1,15 +1,21 @@
 import { Command } from 'commander';
 import { createClientFromOptions } from '../lib/clientFactory.js';
+import { printError, printJson } from '../lib/output.js';
 
 export const statusCommand = new Command('status')
   .description('Check health of web app and Ollama')
   .option('--url <url>', 'API base URL')
   .option('--token <token>', 'API bearer token')
-  .action(async (opts: { url?: string; token?: string }) => {
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts: { url?: string; token?: string; json?: boolean }) => {
     const { client } = createClientFromOptions(opts);
 
     try {
       const status = await client.checkStatus();
+      if (opts.json) {
+        printJson(status);
+        return;
+      }
       console.log('Service Status:');
       console.log(`  Web App:  ${status.web ? '✓ Connected' : '✗ Not reachable'}`);
       console.log(`  Ollama:   ${status.ollama ? '✓ Connected' : '✗ Not reachable'}`);
@@ -21,8 +27,6 @@ export const statusCommand = new Command('status')
         console.log('\nStart Ollama: ollama serve');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error: ${message}`);
-      process.exit(1);
+      printError(err, opts.json);
     }
   });

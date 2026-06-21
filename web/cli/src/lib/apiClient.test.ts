@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { APIClient } from './apiClient';
+import { APIClient, APIError } from './apiClient';
 
 describe('APIClient', () => {
   let client: APIClient;
@@ -141,14 +141,21 @@ describe('APIClient', () => {
       );
     });
 
-    it('throws on non-ok response', async () => {
+    it('throws structured API errors on non-ok response', async () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 503,
         statusText: 'Service Unavailable',
+        json: () => Promise.resolve({ error: 'Ollama unavailable' }),
       });
 
-      await expect(client.query('test')).rejects.toThrow('API error: 503 Service Unavailable');
+      await expect(client.query('test')).rejects.toMatchObject({
+        name: 'APIError',
+        status: 503,
+        statusText: 'Service Unavailable',
+        body: { error: 'Ollama unavailable' },
+      } satisfies Partial<APIError>);
+      await expect(client.query('test')).rejects.toThrow('API error: 503 Service Unavailable: Ollama unavailable');
     });
   });
 

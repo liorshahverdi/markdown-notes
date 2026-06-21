@@ -1,12 +1,14 @@
 import { Command } from 'commander';
 import { createClientFromOptions } from '../lib/clientFactory.js';
+import { printError, printJson } from '../lib/output.js';
 
 export const showCommand = new Command('show')
   .description('Show full note content')
   .argument('<title>', 'Note title to display')
   .option('--url <url>', 'API base URL')
   .option('--token <token>', 'API bearer token')
-  .action(async (title: string, opts: { url?: string; token?: string }) => {
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (title: string, opts: { url?: string; token?: string; json?: boolean }) => {
     const { client } = createClientFromOptions(opts);
 
     try {
@@ -17,14 +19,15 @@ export const showCommand = new Command('show')
       );
 
       if (!match) {
-        console.error(`Note not found: "${title}"`);
-        process.exit(1);
+        throw new Error(`Note not found: "${title}"`);
       }
 
+      if (opts.json) {
+        printJson({ note: match });
+        return;
+      }
       console.log(match.content);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error: ${message}`);
-      process.exit(1);
+      printError(err, opts.json);
     }
   });

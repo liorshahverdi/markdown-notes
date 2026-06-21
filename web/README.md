@@ -127,7 +127,7 @@ cd web/cli
 notes-cli login --url http://localhost:5173 --username <user>
 ```
 
-CLI requests then use `Authorization: Bearer mnpat_...`; browser requests continue to use session cookies.
+CLI requests then use `Authorization: Bearer mnpat_...`; browser requests continue to use session cookies. Non-interactive CLI commands support `--json` for scripts, for example `notes-cli list --json` or `notes-cli ask "What changed?" --json`.
 
 Optional local models:
 

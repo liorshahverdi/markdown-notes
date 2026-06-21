@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { writeFileSync } from 'fs';
 import { createClientFromOptions } from '../lib/clientFactory.js';
 import { formatSkill } from '../lib/formatter.js';
+import { printError, printJson } from '../lib/output.js';
 
 export const skillCommand = new Command('skill')
   .description('Manage skills');
@@ -11,11 +12,16 @@ skillCommand
   .description('List all generated skills')
   .option('--url <url>', 'API base URL')
   .option('--token <token>', 'API bearer token')
-  .action(async (opts: { url?: string; token?: string }) => {
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts: { url?: string; token?: string; json?: boolean }) => {
     const { client } = createClientFromOptions(opts);
 
     try {
       const skills = await client.listSkills();
+      if (opts.json) {
+        printJson({ skills, count: skills.length });
+        return;
+      }
 
       if (skills.length === 0) {
         console.log('No skills found.');
@@ -29,9 +35,7 @@ skillCommand
 
       console.log(`Total: ${skills.length} skill${skills.length === 1 ? '' : 's'}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error: ${message}`);
-      process.exit(1);
+      printError(err, opts.json);
     }
   });
 
@@ -41,18 +45,21 @@ skillCommand
   .requiredOption('--notes <noteIds>', 'Comma-separated note IDs')
   .option('--url <url>', 'API base URL')
   .option('--token <token>', 'API bearer token')
-  .action(async (opts: { notes: string; url?: string; token?: string }) => {
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts: { notes: string; url?: string; token?: string; json?: boolean }) => {
     const { client } = createClientFromOptions(opts);
     const noteIds = opts.notes.split(',').map((s) => s.trim());
 
     try {
-      console.log('Generating skill...');
+      if (!opts.json) console.log('Generating skill...');
       const skill = await client.generateSkill(noteIds);
+      if (opts.json) {
+        printJson({ skill });
+        return;
+      }
       console.log('\n' + skill);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error: ${message}`);
-      process.exit(1);
+      printError(err, opts.json);
     }
   });
 
@@ -63,7 +70,8 @@ skillCommand
   .requiredOption('--out <path>', 'Output file path')
   .option('--url <url>', 'API base URL')
   .option('--token <token>', 'API bearer token')
-  .action(async (skillId: string, opts: { out: string; url?: string; token?: string }) => {
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (skillId: string, opts: { out: string; url?: string; token?: string; json?: boolean }) => {
     const { client } = createClientFromOptions(opts);
 
     try {
@@ -71,16 +79,17 @@ skillCommand
       const skill = skills.find((s) => s.id === skillId);
 
       if (!skill) {
-        console.error(`Skill not found: "${skillId}"`);
-        process.exit(1);
+        throw new Error(`Skill not found: "${skillId}"`);
       }
 
       const content = formatSkill(skill);
       writeFileSync(opts.out, content, 'utf-8');
+      if (opts.json) {
+        printJson({ ok: true, path: opts.out });
+        return;
+      }
       console.log(`Exported skill to ${opts.out}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error: ${message}`);
-      process.exit(1);
+      printError(err, opts.json);
     }
   });

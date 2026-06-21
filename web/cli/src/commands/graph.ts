@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { createClientFromOptions } from '../lib/clientFactory.js';
 import { formatStats } from '../lib/formatter.js';
+import { printError, printJson } from '../lib/output.js';
 
 export const graphCommand = new Command('graph')
   .description('Knowledge graph operations');
@@ -10,16 +11,19 @@ graphCommand
   .description('Show graph statistics')
   .option('--url <url>', 'API base URL')
   .option('--token <token>', 'API bearer token')
-  .action(async (opts: { url?: string; token?: string }) => {
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts: { url?: string; token?: string; json?: boolean }) => {
     const { client } = createClientFromOptions(opts);
 
     try {
       const data = await client.getGraphStats();
+      if (opts.json) {
+        printJson({ stats: data.stats });
+        return;
+      }
       console.log(formatStats(data.stats));
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error: ${message}`);
-      process.exit(1);
+      printError(err, opts.json);
     }
   });
 
@@ -29,11 +33,16 @@ graphCommand
   .option('--type <type>', 'Filter by entity type (person, topic, place, etc.)')
   .option('--url <url>', 'API base URL')
   .option('--token <token>', 'API bearer token')
-  .action(async (opts: { type?: string; url?: string; token?: string }) => {
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts: { type?: string; url?: string; token?: string; json?: boolean }) => {
     const { client } = createClientFromOptions(opts);
 
     try {
       const data = await client.getGraphEntities(opts.type);
+      if (opts.json) {
+        printJson({ entities: data.entities, count: data.entities.length });
+        return;
+      }
 
       if (data.entities.length === 0) {
         console.log('No entities found.');
@@ -46,8 +55,6 @@ graphCommand
 
       console.log(`\nTotal: ${data.entities.length} entit${data.entities.length === 1 ? 'y' : 'ies'}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error: ${message}`);
-      process.exit(1);
+      printError(err, opts.json);
     }
   });

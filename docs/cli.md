@@ -55,3 +55,47 @@ notes-cli skill list
 ```
 
 Most commands accept `--url` and `--token` to override the saved config for one invocation.
+
+## JSON mode
+
+Non-interactive commands support `--json` for scripts and future MCP adapters:
+
+```bash
+notes-cli status --json
+notes-cli list --search "project" --json
+notes-cli show "Note Title" --json
+notes-cli ask "What did I decide?" --json
+notes-cli graph stats --json
+notes-cli graph entities --type topic --json
+notes-cli skill list --json
+notes-cli skill generate --notes note-id --json
+notes-cli logout --json
+```
+
+Examples:
+
+```bash
+notes-cli list --json | jq '.notes[].title'
+notes-cli ask "What changed in graph review?" --json | jq -r '.response'
+MARKDOWN_NOTES_TOKEN=mnpat_... notes-cli graph stats --json
+```
+
+JSON errors are emitted to stderr with a stable shape and exit code `1`:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "message": "API error: 403 Forbidden: Forbidden",
+    "code": "API_ERROR",
+    "status": 403,
+    "statusText": "Forbidden",
+    "body": {
+      "error": "Forbidden",
+      "requiredScope": "notes:write"
+    }
+  }
+}
+```
+
+Interactive `notes-cli chat` remains human-oriented and does not currently provide JSON streaming. If needed later, add a separate `--json-stream` mode rather than overloading `--json`.

@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { APIClient } from '../lib/apiClient.js';
 import { clearToken, loadConfig, saveConfig } from '../lib/config.js';
+import { printError, printJson } from '../lib/output.js';
 
 const DEFAULT_LOGIN_SCOPES = ['notes:read', 'query:read', 'graph:read', 'skills:read'];
 
@@ -24,12 +25,16 @@ export const loginCommand = new Command('login')
   .option('--token-name <name>', 'Name for the generated API token', 'CLI')
   .option('--scopes <scopes>', 'Comma-separated token scopes', DEFAULT_LOGIN_SCOPES.join(','))
   .option('--expires-in-days <days>', 'Token expiry in days', (value) => Number(value))
-  .action(async (opts: { username?: string; password?: string; url?: string; tokenName: string; scopes: string; expiresInDays?: number }) => {
+  .option('--json', 'Output machine-readable JSON')
+  .action(async (opts: { username?: string; password?: string; url?: string; tokenName: string; scopes: string; expiresInDays?: number; json?: boolean }) => {
     const config = loadConfig();
     const baseUrl = opts.url ?? config.baseUrl;
     const client = new APIClient({ baseUrl });
 
     try {
+      if (opts.json && (!opts.username || !opts.password)) {
+        throw new Error('--username and --password are required with login --json to keep stdout machine-readable');
+      }
       const username = await promptIfMissing(opts.username, 'Username');
       const password = await promptIfMissing(opts.password, 'Password');
       const login = await client.login(username, password);
@@ -39,17 +44,24 @@ export const loginCommand = new Command('login')
         login.sessionCookie
       );
       saveConfig({ baseUrl, token: created.token });
+      if (opts.json) {
+        printJson({ ok: true, user: login.user, tokenPrefix: created.record.tokenPrefix });
+        return;
+      }
       console.log(`Logged in as ${login.user.username}. Stored API token ${created.record.tokenPrefix}...`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`Error: ${message}`);
-      process.exit(1);
+      printError(err, opts.json);
     }
   });
 
 export const logoutCommand = new Command('logout')
   .description('Remove the stored local API token from CLI config')
-  .action(() => {
+  .option('--json', 'Output machine-readable JSON')
+  .action((opts: { json?: boolean }) => {
     clearToken();
+    if (opts.json) {
+      printJson({ ok: true });
+      return;
+    }
     console.log('Removed stored Markdown Notes API token.');
   });
