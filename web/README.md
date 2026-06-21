@@ -9,7 +9,8 @@ The current product center is no longer a wiki-first ingestion console. The defa
 3. Extract entities, relationships, Mermaid diagrams, and provenance into a knowledge graph.
 4. Ask chat questions against notes + graph memory by default.
 5. Use the experimental wiki/source ingestion system only when explicitly needed.
-6. Generate skills from meaningful graph context.
+6. Review graph edges when needed; rejected edges are excluded from normal graph/chat retrieval.
+7. Generate skills from meaningful graph context.
 
 Built with SvelteKit, Svelte 5, TypeScript, SQLite, markdown vault files, CodeMirror, Mermaid, and Ollama.
 
@@ -32,6 +33,8 @@ data/vaults/<user-id>/
 
 Set `MARKDOWN_NOTES_DATA_DIR` to move runtime data out of `web/data`.
 
+Saving a normal note updates the canonical note store and memory index. It does not automatically create raw-source or generated-wiki artifacts; those remain explicit experimental workflows.
+
 ### Knowledge graph
 
 The graph is built from notes, links, tags, folders, Mermaid diagrams, extracted entities, and relation provenance. It powers:
@@ -42,7 +45,7 @@ The graph is built from notes, links, tags, folders, Mermaid diagrams, extracted
 - skill candidate generation
 - low-confidence/model-inferred edge review through the edge detail drawer
 
-Select an edge in the graph to inspect its provenance, accept/reject the relation, edit its relationship type, or draft a skill from that cited evidence.
+Select an edge in the graph to inspect its provenance, accept/reject the relation, edit its relationship type, or draft a skill from that cited evidence. Accept/reject decisions are persisted server-side by stable relation review keys. Rejected edges are hidden from the normal graph API and excluded from chat retrieval; diagnostics can request them with `/api/graph?includeRejected=1`.
 
 ### Chat memory
 
@@ -53,7 +56,7 @@ Default chat uses notes + graph memory, not generated wiki pages.
 - reads the authenticated user's notes
 - performs fast lexical/title matching
 - uses persisted server-side memory chunks/embeddings when available
-- expands context with graph evidence
+- expands context with graph evidence, excluding edges the user rejected
 - streams an NDJSON response immediately so the UI does not appear hung
 - synthesizes simple high-confidence answers without waiting for Ollama when safe
 - otherwise routes to Ollama through loopback-only server-side requests
@@ -63,7 +66,7 @@ The chat UI streams tokens into a single assistant message, displays memory cove
 
 ### Experimental wiki/source subsystem
 
-The previous LLM-maintained local wiki remains available under `/experimental/wiki` and maintenance routes. It supports raw source import, generated wiki pages, wiki lint, answer filing, and legacy note migration, but it is no longer the default chat retrieval path.
+The previous LLM-maintained local wiki remains available under `/experimental/wiki` and maintenance routes. It supports raw source import, generated wiki pages, wiki lint, answer filing, and legacy note migration, but it is no longer the default chat retrieval path and is not updated by ordinary note saves.
 
 ---
 
@@ -72,8 +75,10 @@ The previous LLM-maintained local wiki remains available under `/experimental/wi
 | Method | Path | Description |
 | --- | --- | --- |
 | GET/POST/DELETE | `/api/notes` | Local note CRUD and memory indexing |
+| GET/POST/DELETE | `/api/tokens` | Manage local API tokens for CLI/automation; browser session required |
 | POST | `/api/query` | Default notes+graph chat query; streams with `stream: true` |
-| GET | `/api/graph` | Graph data built from notes |
+| GET | `/api/graph` | Graph data built from notes; excludes rejected edges by default; pass `includeRejected=1` for diagnostics |
+| POST | `/api/graph/reviews` | Persist graph edge accept/reject review state |
 | POST | `/api/skills` | Skill generation/export workflows |
 | GET | `/api/ollama/health` | Loopback Ollama health proxy |
 | POST | `/api/ollama/chat` | Loopback Ollama chat proxy |
@@ -115,6 +120,15 @@ npm ci
 npm run dev
 ```
 
+For CLI/API automation, create a local API token with:
+
+```bash
+cd web/cli
+notes-cli login --url http://localhost:5173 --username <user>
+```
+
+CLI requests then use `Authorization: Bearer mnpat_...`; browser requests continue to use session cookies.
+
 Optional local models:
 
 ```bash
@@ -143,6 +157,7 @@ npm test -- --run src/lib/memory
 npm test -- --run src/routes/api/query
 npm test -- --run src/lib/vector/ragPipeline.streaming.test.ts
 npm test -- --run src/lib/graph
+npm test -- --run src/routes/api/graph
 npm test -- --run src/lib/wiki/query
 ```
 
@@ -177,4 +192,4 @@ src/
 - Exposing the app as a hardened multi-user production service.
 - Treating generated wiki pages as the default source of truth.
 - Returning ungrounded chat answers when notes/graph evidence is missing.
-- Treating unreviewed or rejected graph edges as authoritative evidence.
+- Treating rejected graph edges as authoritative evidence.

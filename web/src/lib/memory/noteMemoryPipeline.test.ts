@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildGraphRelationReviewKey } from '$lib/graph/relationReviewKey';
 import { buildNoteMemoryContext } from './noteMemoryPipeline';
 import type { NoteRecord } from '../../types/note';
 
@@ -142,5 +143,32 @@ describe('buildNoteMemoryContext', () => {
     expect(context.citations.some((citation) => citation.kind === 'graph-edge')).toBe(true);
     expect(context.messages.at(-1)?.content).toContain('Supporting graph links');
     expect(context.messages.at(-1)?.content).toContain('Graph memory links:');
+  });
+
+  it('does not cite graph edges rejected in review state', () => {
+    const unreviewed = buildNoteMemoryContext({
+      notes,
+      folders: [],
+      query: 'Mermaid',
+      topK: 5,
+    });
+    const target = unreviewed.graphEvidence[0];
+    expect(target).toBeTruthy();
+
+    const reviewKey = buildGraphRelationReviewKey({
+      fromName: target!.from.name,
+      toName: target!.to.name,
+      type: target!.relation.type,
+    });
+
+    const context = buildNoteMemoryContext({
+      notes,
+      folders: [],
+      query: 'Mermaid',
+      topK: 5,
+      relationReviews: new Map([[reviewKey, { reviewKey, rejected: true, accepted: false }]]),
+    });
+
+    expect(context.graphEvidence.some((item) => item.from.name === target!.from.name && item.to.name === target!.to.name)).toBe(false);
   });
 });

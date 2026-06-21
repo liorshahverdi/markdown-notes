@@ -12,8 +12,9 @@ The current product model is note-first:
 2. Notes are saved to a per-user local vault and cached/indexed in SQLite.
 3. Entity, relation, folder, link, and Mermaid information produce a knowledge graph.
 4. Chat retrieves notes + graph memory by default.
-5. Ollama is called only when deterministic memory recall is insufficient.
-6. Generated wiki/source ingestion remains available as an experimental subsystem.
+5. Persisted graph review decisions are applied before graph evidence reaches chat or the normal graph API.
+6. Ollama is called only when deterministic memory recall is insufficient.
+7. Generated wiki/source ingestion remains available as an explicit experimental subsystem.
 
 ## Core layers
 
@@ -40,7 +41,7 @@ data/vaults/<user-id>/
 └── state/     # runtime/rebuild state
 ```
 
-SQLite stores users/sessions, note metadata caches, wiki/source metadata, memory chunks, graph-related data, and other local indexes. Markdown files remain portable and inspectable.
+SQLite stores users/sessions, hashed API token metadata, note metadata caches, wiki/source metadata, memory chunks, graph relation review decisions, and other local indexes. Markdown files remain portable and inspectable.
 
 ## Chat/query flow
 
@@ -50,11 +51,13 @@ For notes+graph chat it:
 
 1. loads notes/folders for the authenticated user
 2. opens an NDJSON stream immediately for interactive requests
-3. performs lexical/title retrieval and persisted memory-index search
-4. builds note citations and graph citations
-5. returns synthesized high-confidence answers directly where safe
-6. otherwise builds an Ollama chat prompt with note text first and graph links as supporting context
-7. streams Ollama tokens back to the UI
+3. loads persisted graph relation reviews for the user
+4. performs lexical/title retrieval and persisted memory-index search
+5. expands graph context while excluding rejected edges
+6. builds note citations and graph citations
+7. returns synthesized high-confidence answers directly where safe
+8. otherwise builds an Ollama chat prompt with note text first and graph links as supporting context
+9. streams Ollama tokens back to the UI
 
 The prompt explicitly prevents raw graph-edge syntax from being used as an answer. Graph links are supporting context; note text is the evidence source for factual answers.
 
@@ -62,11 +65,17 @@ The prompt explicitly prevents raw graph-edge syntax from being used as an answe
 
 The graph is rebuilt from notes/folders and includes entity/relation provenance. It supports graph visualization, retrieval expansion, skill workflows, and low-confidence/model-inferred edge review helpers.
 
+Graph accept/reject decisions are persisted in SQLite by stable relation review keys derived from endpoint names and relation type. Normal graph and chat retrieval apply those reviews and exclude rejected edges. Diagnostics can request rejected edges explicitly with `GET /api/graph?includeRejected=1`.
+
 The review queue exists but is not yet central to the graph UX. Current UX work should prioritize exploration, evidence, filtering, and clear explanations of why nodes/edges are connected.
 
 ## Experimental wiki subsystem
 
-The source/wiki subsystem is still present but opt-in. It can import raw sources, generate markdown wiki pages, lint generated wiki pages, file cited answers, and migrate legacy notes. It should not be considered the default answer path unless the user enables experimental wiki context.
+The source/wiki subsystem is still present but opt-in. It can import raw sources, generate markdown wiki pages, lint generated wiki pages, file cited answers, and migrate legacy notes. Normal note saves do not mirror notes into raw sources or generated wiki pages. It should not be considered the default answer path unless the user enables experimental wiki context.
+
+## Authentication and local automation
+
+Browser users authenticate with local session cookies. CLI, automation, and future MCP adapters can use scoped local API tokens via `Authorization: Bearer mnpat_...`. Token records are stored hashed in SQLite, full tokens are shown only at creation time, and `/api/tokens` management requires a browser session.
 
 ## Ollama integration
 

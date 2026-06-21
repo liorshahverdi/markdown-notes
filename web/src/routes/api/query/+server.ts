@@ -3,12 +3,14 @@ import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/database';
 import { getDataDir } from '$lib/server/dataDir';
 import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
+import { readGraphRelationReviews } from '$lib/server/graphRelationReviews';
 import { queryOllama } from '$lib/vector/ragPipeline';
 import { readFolders, readNotes } from '$lib/server/notesFile';
 import { buildNoteMemoryContext, type VectorMatch } from '$lib/memory/noteMemoryPipeline';
 import { synthesizeAnswerFromMemory } from '$lib/memory/answerSynthesizer';
 import { ensureUserMemoryIndex, searchLocalMemory } from '$lib/memory/localMemoryIndex';
 import { buildWikiFirstQueryContext } from '$lib/wiki/query/queryPipeline';
+import type { GraphRelationReviewMap } from '$lib/graph/relationReviewKey';
 import type { FolderRecord, NoteRecord } from '../../../types/note';
 
 const DEFAULT_TOP_K = 5;
@@ -80,6 +82,7 @@ function streamNoteGraphResponse(input: {
   userNotes: NoteRecord[];
   folders: FolderRecord[];
   resolvedOllamaUrl: string;
+  relationReviews?: GraphRelationReviewMap;
   model?: string;
   signal?: AbortSignal;
 }): Response {
@@ -129,6 +132,7 @@ function streamNoteGraphResponse(input: {
               query: input.query,
               topK: DEFAULT_TOP_K,
               vectorMatches,
+              relationReviews: input.relationReviews,
             });
             const clientCitations = sanitizeCitationsForClient(queryContext.citations);
             send({
@@ -204,6 +208,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   const userId = locals.user?.id ?? DEFAULT_USER_ID;
   const userNotes = readNotes(userId);
   const folders = readFolders(userId);
+  const relationReviews = includeExperimentalWiki ? undefined : readGraphRelationReviews(getDb(), userId);
 
   if (!includeExperimentalWiki && body.stream === true) {
     // In interactive chat, return the stream before any retrieval/model work so
@@ -215,6 +220,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       userNotes,
       folders,
       resolvedOllamaUrl,
+      relationReviews,
       model,
       signal: request.signal,
     });
@@ -228,6 +234,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       query,
       topK: DEFAULT_TOP_K,
       vectorMatches: [],
+      relationReviews,
     });
     const groundedAnswer = synthesizeAnswerFromMemory({ query, citations: quickContext.citations });
     if (groundedAnswer.confidence === 'high') {
@@ -271,6 +278,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         query,
         topK: DEFAULT_TOP_K,
         vectorMatches,
+        relationReviews,
       });
 
   if (!includeExperimentalWiki) {

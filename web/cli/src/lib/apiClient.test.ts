@@ -16,6 +16,21 @@ describe('APIClient', () => {
   });
 
   describe('constructor', () => {
+    it('sends bearer tokens when configured', async () => {
+      const tokenClient = new APIClient({ baseUrl: 'http://localhost:5173', token: 'mnpat_token_secret' });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ notes: [] }),
+      });
+
+      await tokenClient.listNotes();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:5173/api/notes',
+        { method: 'GET', headers: { Authorization: 'Bearer mnpat_token_secret' } }
+      );
+    });
+
     it('uses default base URL when none provided', () => {
       const defaultClient = new APIClient();
       // We verify by making a call and checking the URL
@@ -40,6 +55,46 @@ describe('APIClient', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         'http://example.com:3000/api/notes',
         expect.any(Object)
+      );
+    });
+  });
+
+  describe('auth and token management', () => {
+    it('logs in with username/password and captures the session cookie', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        headers: { getSetCookie: () => ['session=abc; Path=/; HttpOnly'], get: () => null },
+        json: () => Promise.resolve({ user: { id: 'u1', username: 'tester' } }),
+      });
+
+      const result = await client.login('tester', 'secret');
+
+      expect(result.sessionCookie).toBe('session=abc');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:5173/api/auth',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ action: 'login', username: 'tester', password: 'secret' }),
+        })
+      );
+    });
+
+    it('creates API tokens with a session cookie', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ token: 'mnpat_token_secret', record: { id: 'tok-1' } }),
+      });
+
+      const result = await client.createApiToken({ name: 'CLI', scopes: ['notes:read'] }, 'session=abc');
+
+      expect(result.token).toBe('mnpat_token_secret');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:5173/api/tokens',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: 'session=abc' },
+          body: JSON.stringify({ name: 'CLI', scopes: ['notes:read'] }),
+        }
       );
     });
   });

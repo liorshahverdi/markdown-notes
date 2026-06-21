@@ -1,11 +1,12 @@
 import { Command } from 'commander';
-import { APIClient } from '../lib/apiClient.js';
+import { createClientFromOptions } from '../lib/clientFactory.js';
 
 export const statusCommand = new Command('status')
   .description('Check health of web app and Ollama')
-  .option('--url <url>', 'API base URL', 'http://localhost:5173')
-  .action(async (opts: { url: string }) => {
-    const client = new APIClient(opts.url);
+  .option('--url <url>', 'API base URL')
+  .option('--token <token>', 'API bearer token')
+  .action(async (opts: { url?: string; token?: string }) => {
+    const { client } = createClientFromOptions(opts);
 
     try {
       const status = await client.checkStatus();

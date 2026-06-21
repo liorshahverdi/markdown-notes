@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { db } from '../db/index';
 import {
@@ -30,6 +30,10 @@ describe('graph relation review state', () => {
     selectedEdgeId.set(null);
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('accepts an edge without mutating unrelated edges', async () => {
     await acceptRelation('r1');
 
@@ -46,5 +50,25 @@ describe('graph relation review state', () => {
     expect(get(selectedEdgeId)).toBeNull();
     expect(get(graphEdges).map((edge) => edge.id)).not.toContain('r1');
     expect(get(graphRelations).find((r) => r.id === 'r2')).toMatchObject(relations[1]);
+  });
+
+  it('persists rejected edge review state to the server using a stable relation key', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await rejectRelation('r1');
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/graph/reviews', expect.objectContaining({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reviewKey: 'related_to:a->b',
+        fromName: 'A',
+        toName: 'B',
+        relationType: 'related_to',
+        accepted: false,
+        rejected: true,
+      }),
+    }));
   });
 });

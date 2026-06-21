@@ -18,6 +18,7 @@ Targeted suites:
 ```bash
 npm test -- --run src/lib/memory
 npm test -- --run src/routes/api/query
+npm test -- --run src/routes/api/graph
 npm test -- --run src/lib/vector/ragPipeline.streaming.test.ts
 npm test -- --run src/lib/graph
 npm test -- --run src/lib/components/ChatPanel.test.ts
@@ -88,6 +89,8 @@ Expected behavior: answer from note text first; graph links can support retrieva
 - [ ] Accept/reject a low-confidence or model-inferred edge and verify unrelated edges are not mutated; rejected edges should disappear from the normal graph view.
 - [ ] Generate a skill from a selected edge and verify the draft is grounded in that edge's cited evidence.
 - [ ] Verify graph links improve chat retrieval when a question references a connected note/entity.
+- [ ] Reject an edge and verify chat no longer cites or relies on that edge in default notes+graph retrieval.
+- [ ] Verify `GET /api/graph` excludes rejected edges by default and `GET /api/graph?includeRejected=1` includes them for diagnostics.
 
 UX note: edge selection is canvas-based; if validating manually, capture any discoverability/accessibility issues for follow-up.
 
@@ -117,6 +120,7 @@ npm test -- --run src/lib/wiki/migration
 
 Manual checks:
 
+- [ ] Save a normal note and verify no raw source or generated wiki page is created.
 - [ ] Import a raw source.
 - [ ] Verify a raw file appears under `data/vaults/<user-id>/raw/` unchanged.
 - [ ] Verify generated wiki pages appear under `wiki/`.

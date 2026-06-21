@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { writeFileSync } from 'fs';
-import { APIClient } from '../lib/apiClient.js';
+import { createClientFromOptions } from '../lib/clientFactory.js';
 import { formatSkill } from '../lib/formatter.js';
 
 export const skillCommand = new Command('skill')
@@ -9,9 +9,10 @@ export const skillCommand = new Command('skill')
 skillCommand
   .command('list')
   .description('List all generated skills')
-  .option('--url <url>', 'API base URL', 'http://localhost:5173')
-  .action(async (opts: { url: string }) => {
-    const client = new APIClient(opts.url);
+  .option('--url <url>', 'API base URL')
+  .option('--token <token>', 'API bearer token')
+  .action(async (opts: { url?: string; token?: string }) => {
+    const { client } = createClientFromOptions(opts);
 
     try {
       const skills = await client.listSkills();
@@ -38,9 +39,10 @@ skillCommand
   .command('generate')
   .description('Generate a skill from notes')
   .requiredOption('--notes <noteIds>', 'Comma-separated note IDs')
-  .option('--url <url>', 'API base URL', 'http://localhost:5173')
-  .action(async (opts: { notes: string; url: string }) => {
-    const client = new APIClient(opts.url);
+  .option('--url <url>', 'API base URL')
+  .option('--token <token>', 'API bearer token')
+  .action(async (opts: { notes: string; url?: string; token?: string }) => {
+    const { client } = createClientFromOptions(opts);
     const noteIds = opts.notes.split(',').map((s) => s.trim());
 
     try {
@@ -59,9 +61,10 @@ skillCommand
   .description('Export a skill to a file')
   .argument('<skill-id>', 'Skill ID to export')
   .requiredOption('--out <path>', 'Output file path')
-  .option('--url <url>', 'API base URL', 'http://localhost:5173')
-  .action(async (skillId: string, opts: { out: string; url: string }) => {
-    const client = new APIClient(opts.url);
+  .option('--url <url>', 'API base URL')
+  .option('--token <token>', 'API bearer token')
+  .action(async (skillId: string, opts: { out: string; url?: string; token?: string }) => {
+    const { client } = createClientFromOptions(opts);
 
     try {
       const skills = await client.listSkills();

@@ -1,9 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { readNotes, readNote, upsertNote, deleteNote } from '$lib/server/notesFile';
-import { getDb } from '$lib/server/database';
 import { triggerSummaryGeneration } from '$lib/server/noteSummarizer';
-import { syncNoteToSource } from '$lib/wiki/migration/notesToSources';
 import { indexNoteMemory, deleteNoteMemory } from '$lib/memory/localMemoryIndex';
 import { createHash } from 'crypto';
 
@@ -79,7 +77,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     triggerSummaryGeneration(userId, body.note.id, body.note.title, body.note.content);
     const savedNote = readNote(userId, body.note.id);
     const noteForIndex = savedNote ?? body.note;
-    syncNoteToSource({ db: getDb(), userId, baseDir: 'data', note: noteForIndex });
     void indexNoteMemory({ userId, note: noteForIndex }).catch((err) => {
       console.warn('[Notes] Failed to update local memory index', err);
     });

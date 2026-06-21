@@ -16,6 +16,7 @@ Useful targeted suites:
 ```bash
 npm test -- --run src/lib/memory
 npm test -- --run src/routes/api/query
+npm test -- --run src/routes/api/graph
 npm test -- --run src/lib/vector/ragPipeline.streaming.test.ts
 npm test -- --run src/lib/graph
 npm test -- --run src/lib/wiki/query
@@ -42,6 +43,7 @@ Manual checklist:
 - [ ] Ask a question that requires reasoning from the note but is not covered by deterministic recall; verify the stream shows that Ollama is reasoning over relevant notes and returns a natural-language answer.
 - [ ] Verify the answer does not expose raw graph-edge syntax such as `A --mentioned_in--> B`.
 - [ ] Verify the chat footer shows memory coverage, e.g. `Memory evidence: 1 note · 3 graph edges`.
+- [ ] Reject a graph edge related to the question and verify chat no longer cites or relies on that edge.
 - [ ] Stop generation and verify the request cancels cleanly.
 
 ## Manual graph checks
@@ -50,6 +52,9 @@ Manual checklist:
 - [ ] Open `/graph`.
 - [ ] Verify nodes and relations appear.
 - [ ] Select nodes/edges and verify detail/provenance is understandable.
+- [ ] Accept/reject an edge and verify unrelated edges are not mutated.
+- [ ] Verify rejected edges disappear from normal `/graph` data and chat retrieval.
+- [ ] Use `/api/graph?includeRejected=1` only for diagnostics when you need to confirm rejected-edge state.
 - [ ] Treat review queue items as experimental; verify accepted/rejected state changes if using that surface.
 
 ## Experimental wiki checks
@@ -65,6 +70,7 @@ npm test -- --run src/lib/wiki/migration
 
 Manual checklist:
 
+- [ ] Save a normal note and verify it does not create a raw source or generated wiki page.
 - [ ] Import a raw source under the experimental wiki UI.
 - [ ] Verify raw markdown appears under `raw/` unchanged.
 - [ ] Verify generated wiki pages appear under `wiki/`.

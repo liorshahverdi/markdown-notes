@@ -4,6 +4,7 @@ import { db } from '../db/index';
 import { notes } from './notes';
 import { getFolderPathArray, loadFolders, folders } from './folders';
 import { buildGraphData } from '../graph/graphBuilder';
+import { buildGraphRelationReviewKeyForRelation } from '../graph/relationReviewKey';
 import { mergeEntities } from '../graph/entityDeduplicator';
 import { runExtractionPipeline } from '../graph/extractionPipeline';
 import { findTransitiveCandidatesForEntity } from '../graph/transitiveInference';
@@ -522,12 +523,42 @@ export async function updateRelation(relationId: string, patch: Partial<GraphRel
   }
 }
 
+async function persistRelationReviewToServer(relationId: string, accepted: boolean, rejected: boolean): Promise<void> {
+  if (typeof fetch !== 'function') return;
+  const relation = get(graphRelations).find((item) => item.id === relationId);
+  if (!relation) return;
+  const entities = get(graphEntities);
+  const from = entities.find((entity) => entity.id === relation.fromEntityId);
+  const to = entities.find((entity) => entity.id === relation.toEntityId);
+  if (!from || !to) return;
+
+  const reviewKey = buildGraphRelationReviewKeyForRelation(relation, from, to);
+  try {
+    await fetch('/api/graph/reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reviewKey,
+        fromName: from.name,
+        toName: to.name,
+        relationType: relation.type,
+        accepted,
+        rejected,
+      }),
+    });
+  } catch {
+    // Local graph state remains authoritative in the UI; server sync will be retried on a later review action.
+  }
+}
+
 export async function acceptRelation(relationId: string): Promise<void> {
   await updateRelation(relationId, { accepted: true, rejected: false });
+  await persistRelationReviewToServer(relationId, true, false);
 }
 
 export async function rejectRelation(relationId: string): Promise<void> {
   await updateRelation(relationId, { accepted: false, rejected: true });
+  await persistRelationReviewToServer(relationId, false, true);
   if (get(selectedEdgeId) === relationId) selectedEdgeId.set(null);
 }
 

@@ -61,7 +61,7 @@ describe('adaptNoteToSourceImport', () => {
 });
 
 describe('syncNoteToSource', () => {
-  it('makes a newly saved note immediately available as an ingested raw source and wiki page', () => {
+  it('explicitly mirrors a selected note into an ingested raw source and wiki page', () => {
     const { db, baseDir } = setup();
     const savedNote = note({
       id: 'note-autosync',

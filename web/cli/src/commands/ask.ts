@@ -1,14 +1,15 @@
 import { Command } from 'commander';
-import { APIClient } from '../lib/apiClient.js';
+import { createClientFromOptions } from '../lib/clientFactory.js';
 import { formatResponse } from '../lib/formatter.js';
 
 export const askCommand = new Command('ask')
   .description('Query your notes using RAG')
   .argument('<query>', 'The question to ask')
   .option('-m, --model <model>', 'Ollama model to use')
-  .option('--url <url>', 'API base URL', 'http://localhost:5173')
-  .action(async (query: string, opts: { model?: string; url: string }) => {
-    const client = new APIClient(opts.url);
+  .option('--url <url>', 'API base URL')
+  .option('--token <token>', 'API bearer token')
+  .action(async (query: string, opts: { model?: string; url?: string; token?: string }) => {
+    const { client } = createClientFromOptions(opts);
 
     try {
       const result = await client.query(query, opts.model);

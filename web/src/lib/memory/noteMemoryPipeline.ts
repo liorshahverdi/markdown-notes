@@ -1,6 +1,7 @@
 import { buildRAGMessages, extractRelevantExcerpt, type ChatMessage } from '$lib/vector/ragPipeline';
 import { retrieveGraphMemory, formatGraphEvidence, type GraphMemoryEvidence } from './graphMemoryRetriever';
 import { graphEdgeCitation, noteCitation, type MemoryCitation } from './memoryCitation';
+import type { GraphRelationReviewMap } from '$lib/graph/relationReviewKey';
 import type { FolderRecord, NoteRecord } from '../../types/note';
 
 export interface VectorMatch {
@@ -69,6 +70,7 @@ export function buildNoteMemoryContext(input: {
   query: string;
   topK?: number;
   vectorMatches?: VectorMatch[];
+  relationReviews?: GraphRelationReviewMap;
 }): NoteMemoryContext {
   const topK = input.topK ?? 5;
   const noteById = new Map(input.notes.map((note) => [note.id, note]));
@@ -111,6 +113,7 @@ export function buildNoteMemoryContext(input: {
     query: input.query,
     seedNoteIds: selected.map((item) => item.note.id),
     limit: Math.max(3, topK),
+    relationReviews: input.relationReviews,
   });
 
   const graphNoteIds = new Set(graphEvidence.flatMap((item) => item.sourceNoteIds));

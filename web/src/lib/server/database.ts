@@ -32,6 +32,21 @@ export function initializeDatabase(db: SqliteDatabase): void {
       FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      name TEXT NOT NULL,
+      tokenId TEXT NOT NULL UNIQUE,
+      tokenPrefix TEXT NOT NULL,
+      secretHash TEXT NOT NULL,
+      scopesJson TEXT NOT NULL DEFAULT '[]',
+      createdAt INTEGER NOT NULL,
+      lastUsedAt INTEGER,
+      expiresAt INTEGER,
+      revokedAt INTEGER,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS notes (
       id TEXT NOT NULL,
       userId TEXT NOT NULL,
@@ -115,8 +130,23 @@ export function initializeDatabase(db: SqliteDatabase): void {
       updatedAt INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS graph_relation_reviews (
+      userId TEXT NOT NULL,
+      reviewKey TEXT NOT NULL,
+      fromName TEXT NOT NULL,
+      toName TEXT NOT NULL,
+      relationType TEXT NOT NULL,
+      accepted INTEGER NOT NULL DEFAULT 0,
+      rejected INTEGER NOT NULL DEFAULT 0,
+      updatedAt INTEGER NOT NULL,
+      PRIMARY KEY (userId, reviewKey)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_userId ON sessions(userId);
     CREATE INDEX IF NOT EXISTS idx_sessions_expiresAt ON sessions(expiresAt);
+    CREATE INDEX IF NOT EXISTS idx_api_tokens_userId ON api_tokens(userId);
+    CREATE INDEX IF NOT EXISTS idx_api_tokens_tokenId ON api_tokens(tokenId);
+    CREATE INDEX IF NOT EXISTS idx_api_tokens_revokedAt ON api_tokens(revokedAt);
     CREATE INDEX IF NOT EXISTS idx_notes_userId ON notes(userId);
     CREATE INDEX IF NOT EXISTS idx_notes_folderId ON notes(userId, folderId);
     CREATE INDEX IF NOT EXISTS idx_notes_isShared ON notes(isShared);
@@ -130,6 +160,7 @@ export function initializeDatabase(db: SqliteDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_wiki_mutations_runId ON wiki_mutations(runId);
     CREATE INDEX IF NOT EXISTS idx_memory_chunks_user_note ON memory_chunks(userId, noteId);
     CREATE INDEX IF NOT EXISTS idx_memory_chunks_user ON memory_chunks(userId);
+    CREATE INDEX IF NOT EXISTS idx_graph_relation_reviews_user ON graph_relation_reviews(userId);
   `);
 
   try {

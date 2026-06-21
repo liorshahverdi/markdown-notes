@@ -1,4 +1,5 @@
 import { buildGraphSnapshot } from '$lib/server/graphSnapshot';
+import { applyGraphRelationReview, type GraphRelationReviewMap } from '$lib/graph/relationReviewKey';
 import type { FolderRecord, NoteRecord } from '../../types/note';
 import type { GraphEntity, GraphRelation } from '../../types/graph';
 
@@ -34,6 +35,7 @@ export function retrieveGraphMemory(input: {
   query: string;
   seedNoteIds?: string[];
   limit?: number;
+  relationReviews?: GraphRelationReviewMap;
 }): GraphMemoryEvidence[] {
   const snapshot = buildGraphSnapshot(input.notes, input.folders);
   const queryTerms = new Set(tokenize(input.query));
@@ -46,13 +48,16 @@ export function retrieveGraphMemory(input: {
     const to = entityById.get(relation.toEntityId);
     if (!from || !to) continue;
 
+    const reviewedRelation = applyGraphRelationReview(relation, from, to, input.relationReviews);
+    if (reviewedRelation.rejected) continue;
+
     const sourceNoteIds = Array.from(new Set([...from.sourceNoteIds, ...to.sourceNoteIds]));
     const touchesSeed = sourceNoteIds.some((noteId) => seedNoteIds.has(noteId));
     const nameScore = overlapScore(queryTerms, `${from.name} ${to.name} ${relation.type}`);
     const score = (touchesSeed ? 0.6 : 0) + nameScore;
 
     if (score <= 0) continue;
-    evidence.push({ relation, from, to, sourceNoteIds, score: Math.min(1, score) });
+    evidence.push({ relation: reviewedRelation, from, to, sourceNoteIds, score: Math.min(1, score) });
   }
 
   return evidence.sort((a, b) => b.score - a.score).slice(0, input.limit ?? 5);

@@ -30,8 +30,9 @@ The active web app has pivoted back to a note-first product model:
 - the knowledge graph is built from notes, entities, links, folders, and Mermaid diagrams
 - chat defaults to notes + graph memory
 - Ollama is used only when deterministic memory recall is insufficient
-- generated wiki/source ingestion remains available as an experimental subsystem
-- graph review helpers exist, but the review queue is not yet a primary workflow
+- generated wiki/source ingestion remains available as an explicit experimental subsystem, not a normal note-save side effect
+- graph review decisions are persisted and rejected edges are excluded from normal graph/chat retrieval
+- local API tokens support CLI automation and future MCP adapters
 
 The project is still local-first/pre-release software. Production or non-local deployment requires additional hardening.
 

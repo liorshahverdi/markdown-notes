@@ -10,6 +10,7 @@ Priorities:
 
 - Redesign `/graph` around exploration first: search, filters, clusters, selected-node details, and clear edge evidence.
 - Make every edge answer "why is this connected?" with note excerpts/provenance.
+- Continue hardening persisted graph review state so accepted/rejected decisions stay consistent across graph UI, graph API, chat retrieval, and diagnostics.
 - Demote or reframe the review queue as an advanced evidence/review panel until users understand why items matter.
 - Add clearer empty states and onboarding for graph generation.
 - Improve graph-to-chat handoff: ask about selected node, selected edge, or cluster.
@@ -37,6 +38,7 @@ The source/wiki system remains useful but should stay opt-in until the note-firs
 Planned work:
 
 - Keep wiki/source import under experimental or maintenance navigation.
+- Keep ordinary note saves out of wiki/source synchronization unless a user explicitly opts into an experimental workflow.
 - Maintain tests for ingest, query, lint, answer filing, and migration.
 - Avoid making generated wiki pages the default source of truth for chat.
 

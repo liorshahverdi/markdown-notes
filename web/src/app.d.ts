@@ -5,6 +5,9 @@ declare global {
 		// interface Error {}
 		interface Locals {
 			user?: { id: string; username: string };
+			auth?:
+				| { type: 'session' }
+				| { type: 'api-token'; tokenId: string; scopes: string[] };
 		}
 		// interface PageData {}
 		// interface PageState {}
