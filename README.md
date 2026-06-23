@@ -48,6 +48,24 @@ npm run dev
 
 The web app defaults to `web/data` for local runtime state. Set `MARKDOWN_NOTES_DATA_DIR` to use another location.
 
+If native install scripts fail on the optional transitive `sharp` dependency, the API/server path can be built locally with:
+
+```bash
+cd web
+npm ci --ignore-scripts
+npm rebuild better-sqlite3
+npm run build
+```
+
+### Docker Compose
+
+```bash
+docker compose up -d --build
+curl -i http://127.0.0.1:5173/api/notes
+```
+
+The compose service stores app data in the named volume `markdown-notes-data`, exposes port `5173`, and sets `MARKDOWN_NOTES_DATA_DIR=/data` inside the container. A `401 Unauthorized` response from `/api/notes` is a healthy unauthenticated API smoke test; create/login to a browser session and mint a read-only API token for automation.
+
 Optional local model setup:
 
 ```bash
