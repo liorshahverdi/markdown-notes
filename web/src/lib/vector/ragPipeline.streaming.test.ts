@@ -46,7 +46,11 @@ describe('queryOllama streaming parser', () => {
     const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
     const [, init] = calls[0];
     const body = JSON.parse(String(init.body));
-    expect(body.options).toMatchObject({ temperature: 0, num_predict: 512, num_ctx: 8192 });
+    // `num_predict` was 512 for latency. Reasoning models (gemma4, qwen3, deepseek-r1)
+    // emit thinking tokens before any content, and 512 is not enough for both on a
+    // hard question — the model returns an empty answer rather than a slow one.
+    // 2048 keeps the request deterministic while leaving room to think and answer.
+    expect(body.options).toMatchObject({ temperature: 0, num_predict: 2048, num_ctx: 8192 });
     expect(body.keep_alive).toBe('10m');
   });
 

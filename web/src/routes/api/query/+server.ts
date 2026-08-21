@@ -166,7 +166,7 @@ function streamNoteGraphResponse(input: {
               send({ type: 'token', token });
             }
             if (tokenCount === 0) {
-              send({ type: 'error', message: 'Ollama returned an empty response. Check the selected model and Ollama server logs.' });
+              send({ type: 'error', message: 'Ollama returned an empty response. If you are using a reasoning model (gemma4, qwen3, deepseek-r1, gpt-oss and similar), it may have spent its entire token budget on thinking before producing an answer — try a larger num_predict or a non-reasoning model.' });
               return;
             }
             send({ type: 'done' });
@@ -370,7 +370,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       fullResponse += token;
     }
     if (!fullResponse.trim()) {
-      fullResponse = 'Ollama returned an empty response. Check the selected model and Ollama server logs.';
+      fullResponse = 'Ollama returned an empty response. If you are using a reasoning model (gemma4, qwen3, deepseek-r1, gpt-oss and similar), it may have spent its entire token budget on thinking before producing an answer — try a larger num_predict or a non-reasoning model.';
     }
 
     const clientCitations = sanitizeCitationsForClient(queryContext.citations);
