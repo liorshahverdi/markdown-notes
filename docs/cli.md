@@ -65,6 +65,12 @@ bulk-written notes are invisible to graph and chat retrieval until they are touc
 Each note is given a stable id derived from its source path and title, so re-running an import
 updates the existing notes instead of creating duplicates.
 
+`--max-words` (default 1500) further splits any note that is still too long after
+heading-splitting, cutting on paragraph boundaries and suffixing the parts `(1/3)`,
+`(2/3)` and so on. This matters for documents that mark their sections with bold text
+rather than `##`, where heading-splitting finds nothing to cut — one such file imported
+as a single 27,691-word note. Set `--max-words 0` to disable.
+
 `--split` is worth using on long documents. A single very large note is a poor retrieval unit:
 chunking is coarse and the whole document tends to come back as the answer to everything.
 Splitting on `##` headings gives the index units that are about one thing. Headings inside

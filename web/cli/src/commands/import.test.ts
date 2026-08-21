@@ -155,3 +155,61 @@ describe('import scope handling', () => {
     }
   });
 });
+
+describe('oversized notes', () => {
+  it('splits a note that is too long even with no headings', async () => {
+    const d = await mkdtemp(join(tmpdir(), 'notes-import-big-'));
+    try {
+      const para = `${'word '.repeat(200).trim()}\n\n`;
+      await writeFile(join(d, 'big.md'), para.repeat(10));
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const cmd = await loadImportCommand();
+      await cmd.parseAsync(['node', 'notes-cli', d, '--max-words', '500']);
+
+      const titles = mockClient.upsertNote.mock.calls.map((c) => c[0].title);
+      expect(titles.length).toBeGreaterThan(1);
+      expect(titles[0]).toMatch(/\(1\/\d+\)$/);
+      for (const call of mockClient.upsertNote.mock.calls) {
+        const words = call[0].content.split(/\s+/).filter(Boolean).length;
+        expect(words).toBeLessThanOrEqual(700);
+      }
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves a short note as a single note with no suffix', async () => {
+    const d = await mkdtemp(join(tmpdir(), 'notes-import-small-'));
+    try {
+      await writeFile(join(d, 'small.md'), 'just a few words here');
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const cmd = await loadImportCommand();
+      await cmd.parseAsync(['node', 'notes-cli', d, '--max-words', '500']);
+      expect(mockClient.upsertNote).toHaveBeenCalledTimes(1);
+      expect(mockClient.upsertNote.mock.calls[0][0].title).toBe('small');
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it('still splits when a stray unbalanced fence would stick the splitter on', async () => {
+    const d = await mkdtemp(join(tmpdir(), 'notes-import-badfence-'));
+    try {
+      const para = `${'word '.repeat(150).trim()}\n\n`;
+      await writeFile(join(d, 'stray.md'), para + '```\n\n' + para.repeat(20));
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const cmd = await loadImportCommand();
+      await cmd.parseAsync(['node', 'notes-cli', d, '--max-words', '200']);
+
+      expect(mockClient.upsertNote.mock.calls.length).toBeGreaterThan(2);
+      const biggest = Math.max(
+        ...mockClient.upsertNote.mock.calls.map(
+          (c) => c[0].content.split(/\s+/).filter(Boolean).length
+        )
+      );
+      expect(biggest).toBeLessThanOrEqual(200 * 3 + 200);
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+});
