@@ -8,6 +8,18 @@ import { printError, printJson } from '../lib/output.js';
 
 const DEFAULT_EXTENSIONS = ['.md', '.markdown'];
 
+/**
+ * Hard ceiling on a single note, in words.
+ *
+ * A note that is too large is not just a poor retrieval unit — it breaks generation.
+ * Retrieved verbatim into a chat prompt, one oversized note can exceed the model's
+ * context window, and Ollama then returns an EMPTY response rather than an error, so
+ * the failure surfaces as "Ollama returned an empty response" with no clue why.
+ * Observed with a 27 691-word note (a document whose sections were marked with bold
+ * text instead of `##`, so heading-splitting found nothing to cut).
+ */
+const DEFAULT_MAX_WORDS = 1500;
+
 /** Directories that are never worth indexing. */
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.svelte-kit', 'dist', 'build', '.venv']);
 
@@ -19,6 +31,52 @@ interface ImportOptions {
   split?: boolean;
   dryRun?: boolean;
   prefix?: string;
+  maxWords?: string;
+}
+
+/**
+ * Split a chunk that is still oversized after heading-splitting.
+ *
+ * Cuts on blank lines so paragraphs stay intact, and never inside a fenced code
+ * block — a half a code block is worse than a long note. Parts are suffixed
+ * `(1/3)`, `(2/3)` … so the pieces are recognisable as one document in results.
+ */
+function splitByWords(title: string, content: string, maxWords: number): Candidate[] {
+  if (content.split(/\s+/).filter(Boolean).length <= maxWords) {
+    return [{ title, content, sourcePath: '' }];
+  }
+  const paras = content.split(/\n\s*\n/);
+  const chunks: string[] = [];
+  let buf: string[] = [];
+  let count = 0;
+  let inFence = false;
+  // ⚠️A HARD CEILING THAT IGNORES `inFence`. Keeping a code block intact is a
+  // nice-to-have; emitting a 22 000-word note is a correctness failure. Real markdown
+  // contains unbalanced fences — a single stray ``` in a document leaves `inFence`
+  // stuck on, and without this valve everything after it accumulates into one chunk.
+  // Found on a real file whose only fence marker was unmatched.
+  const hardCeiling = maxWords * 3;
+  for (const para of paras) {
+    const fences = (para.match(/```/g) ?? []).length;
+    const words = para.split(/\s+/).filter(Boolean).length;
+    const overHard = count > 0 && count + words > hardCeiling;
+    if (count > 0 && count + words > maxWords && (!inFence || overHard)) {
+      chunks.push(buf.join('\n\n'));
+      buf = [];
+      count = 0;
+      if (overHard) inFence = false; // the fence state is untrustworthy; reset it
+    }
+    buf.push(para);
+    count += words;
+    if (fences % 2 === 1) inFence = !inFence;
+  }
+  if (buf.length) chunks.push(buf.join('\n\n'));
+  if (chunks.length <= 1) return [{ title, content, sourcePath: '' }];
+  return chunks.map((c, i) => ({
+    title: `${title} (${i + 1}/${chunks.length})`,
+    content: c,
+    sourcePath: '',
+  }));
 }
 
 interface Candidate {
@@ -87,6 +145,7 @@ export const importCommand = new Command('import')
   .option('--token <token>', 'API bearer token')
   .option('--ext <list>', 'Comma-separated extensions', DEFAULT_EXTENSIONS.join(','))
   .option('--split', 'Split each file into one note per top-level "##" section')
+  .option('--max-words <n>', 'Further split any note longer than this many words', String(DEFAULT_MAX_WORDS))
   .option('--prefix <prefix>', 'Prepend a prefix to every note title')
   .option('--dry-run', 'List what would be imported without writing')
   .option('--json', 'Output machine-readable JSON')
@@ -108,7 +167,13 @@ export const importCommand = new Command('import')
         const rel = info.isDirectory() ? relative(root, file) : basename(file);
         const base = rel.replace(/\.(md|markdown)$/i, '');
         const titled = opts.prefix ? `${opts.prefix}${base}` : base;
-        const parts = opts.split ? splitSections(titled, raw) : [{ title: titled, content: raw, sourcePath: '' }];
+        const maxWords = Number(opts.maxWords ?? DEFAULT_MAX_WORDS);
+        const sections = opts.split
+          ? splitSections(titled, raw)
+          : [{ title: titled, content: raw, sourcePath: '' }];
+        const parts = Number.isFinite(maxWords) && maxWords > 0
+          ? sections.flatMap((s) => splitByWords(s.title, s.content, maxWords))
+          : sections;
         for (const part of parts) candidates.push({ ...part, sourcePath: rel });
       }
 

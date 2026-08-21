@@ -372,9 +372,22 @@ export async function* queryOllama(
   // Support both messages array (new) and string prompt (legacy)
   const isMessages = Array.isArray(messagesOrPrompt);
   const endpoint = isMessages ? '/api/chat' : '/api/generate';
+  // 🔴`num_predict: 512` silently breaks REASONING models.
+  //
+  // Models that emit thinking tokens (gemma4, qwen3, deepseek-r1, gpt-oss …) spend
+  // part of the budget reasoning before producing any `message.content`. On an easy
+  // question the thinking is short and an answer still fits; on a hard one the model
+  // consumes the whole 512-token budget thinking and emits NO content at all. Ollama
+  // then returns an empty string, and the user sees
+  // "Ollama returned an empty response. Check the selected model and Ollama server
+  // logs." — which points at the model and the logs, where there is nothing wrong.
+  //
+  // Reproduced with gemma4:31b: identical request, `eval_count` exactly 512 and empty
+  // content, while the same messages with no cap answer normally at eval_count 1517.
+  // Easy prompts work, hard ones do not, which makes it look intermittent.
   const options = {
     temperature: 0,
-    num_predict: 512,
+    num_predict: 2048,
     num_ctx: 8192,
   };
   const body = isMessages
