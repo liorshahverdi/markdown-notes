@@ -182,6 +182,25 @@ export class APIClient {
     return data.note ?? null;
   }
 
+  /**
+   * Upsert a single note.
+   *
+   * Uses the single-note path (`{ note }`) rather than the bulk path
+   * (`{ notes: [...] }`) on purpose: only the single-note path triggers summary
+   * generation and `indexNoteMemory`, so bulk-written notes are invisible to
+   * graph/chat retrieval until they are touched again.
+   */
+  async upsertNote(note: NoteRecord): Promise<NoteRecord | null> {
+    const res = await fetch(`${this.baseUrl}/api/notes`, {
+      method: 'POST',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ note }),
+    });
+
+    const data = await this.parseJsonResponse<{ note?: NoteRecord | null }>(res);
+    return data.note ?? null;
+  }
+
   async listSkills(): Promise<SkillRecord[]> {
     const res = await fetch(`${this.baseUrl}/api/skills`, this.requestInit('GET'));
     const data = await this.parseJsonResponse<{ skills: SkillRecord[] }>(res);

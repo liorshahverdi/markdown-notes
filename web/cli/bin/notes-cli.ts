@@ -7,6 +7,7 @@ import { listCommand } from '../src/commands/list.js';
 import { showCommand } from '../src/commands/show.js';
 import { skillCommand } from '../src/commands/skill.js';
 import { graphCommand } from '../src/commands/graph.js';
+import { importCommand } from '../src/commands/import.js';
 import { statusCommand } from '../src/commands/status.js';
 import { loginCommand, logoutCommand } from '../src/commands/auth.js';
 
@@ -23,6 +24,7 @@ program.addCommand(askCommand);
 program.addCommand(chatCommand);
 program.addCommand(listCommand);
 program.addCommand(showCommand);
+program.addCommand(importCommand);
 program.addCommand(skillCommand);
 program.addCommand(graphCommand);
 program.addCommand(statusCommand);
