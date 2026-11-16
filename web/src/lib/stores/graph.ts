@@ -8,7 +8,7 @@
  */
 import { writable, get } from 'svelte/store';
 import { buildGraphData } from '../graph/graphBuilder';
-import type { GraphProposal, GraphProposalStatus, GraphQualityMetrics, GraphRunSummary, RetrievalEvalResult } from '../graph/proposals';
+import type { GraphLoopStatus, GraphProposal, GraphProposalStatus, GraphQualityMetrics, GraphRunSummary, RetrievalEvalResult } from '../graph/proposals';
 import type { GraphEntity, GraphRelation, GraphNode, GraphEdge } from '../../types/graph';
 
 export const graphEntities = writable<GraphEntity[]>([]);
@@ -31,6 +31,18 @@ export interface EnrichmentStatus {
 }
 export const enrichmentStatus = writable<EnrichmentStatus>({ runs: [], metrics: null, thresholds: [] });
 export const enrichmentRunning = writable(false);
+
+/** Header pill status; null until first loaded. */
+export const graphStatus = writable<GraphLoopStatus | null>(null);
+
+/** Refresh the loop status. Keeps the last known value if the hub is unreachable. */
+export async function refreshGraphStatus(): Promise<void> {
+  try {
+    graphStatus.set(await requestJson<GraphLoopStatus>('/api/graph/status'));
+  } catch {
+    // Transient failures should not blank the header.
+  }
+}
 
 /** Ephemeral transitive suggestions per entity (never persisted unless accepted). */
 const ephemeralRelations = writable<GraphRelation[]>([]);
@@ -100,7 +112,7 @@ export async function loadEnrichmentStatus(): Promise<void> {
 }
 
 async function refreshAll(): Promise<void> {
-  await Promise.all([loadGraphData(), loadProposals(), loadEnrichmentStatus().catch(() => undefined)]);
+  await Promise.all([loadGraphData(), loadProposals(), loadEnrichmentStatus().catch(() => undefined), refreshGraphStatus()]);
 }
 
 /** Run an enrichment pass on the server now, then refresh. */
@@ -150,7 +162,7 @@ export async function extractAndSaveEntities(
 export async function reviewProposalAction(id: string, action: 'accept' | 'reject' | 'undo'): Promise<GraphProposal | null> {
   const data = await postJson<{ proposal: GraphProposal }>(`/api/graph/proposals/${encodeURIComponent(id)}`, { action });
   graphProposals.update((current) => current.map((item) => (item.id === id ? data.proposal : item)));
-  await Promise.all([loadGraphData(), loadEnrichmentStatus().catch(() => undefined)]);
+  await Promise.all([loadGraphData(), loadEnrichmentStatus().catch(() => undefined), refreshGraphStatus()]);
   return data.proposal;
 }
 
@@ -177,7 +189,7 @@ async function reviewEdge(relationId: string, action: 'accept' | 'reject' | 'ret
     action,
     type,
   });
-  await Promise.all([loadGraphData(), loadProposals(), loadEnrichmentStatus().catch(() => undefined)]);
+  await Promise.all([loadGraphData(), loadProposals(), loadEnrichmentStatus().catch(() => undefined), refreshGraphStatus()]);
 }
 
 export async function acceptRelation(relationId: string): Promise<void> {

@@ -56,6 +56,7 @@ export interface EdgeUsageRow {
   relationId: string;
   useCount: number;
   helpfulCount: number;
+  unhelpfulCount?: number;
   lastUsedAt?: number | null;
   lastHelpfulAt?: number | null;
 }
@@ -111,7 +112,8 @@ export function reviewStateOf(relation: GraphRelation): RelationReviewState {
 
 /**
  * Usage-aware weight: helpful citations boost an edge; unreviewed automatic
- * edges that nobody uses decay after a grace period (never below 25%).
+ * edges that nobody uses decay after a grace period (never below 25%);
+ * thumbs-down answers lower non-accepted edges by 0.1 each (at most 0.3).
  */
 export function effectiveEdgeWeight(input: {
   confidence?: number;
@@ -130,6 +132,11 @@ export function effectiveEdgeWeight(input: {
     if (idleDays > DECAY_GRACE_DAYS) {
       weight *= Math.max(0.25, Math.pow(0.5, (idleDays - DECAY_GRACE_DAYS) / DECAY_GRACE_DAYS));
     }
+  }
+  // Thumbs-down on answers that cited this edge; never overrides your own acceptance.
+  const unhelpful = input.usage?.unhelpfulCount ?? 0;
+  if (unhelpful > 0 && input.reviewState !== 'accepted') {
+    weight = Math.max(0, weight - 0.1 * Math.min(unhelpful, 3));
   }
   return Math.round(weight * 1000) / 1000;
 }

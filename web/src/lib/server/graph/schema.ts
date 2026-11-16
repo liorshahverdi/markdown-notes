@@ -128,4 +128,10 @@ export function initializeGraphTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_graph_eval_queries_user ON graph_eval_queries(userId);
     CREATE INDEX IF NOT EXISTS idx_graph_runs_user ON graph_runs(userId, startedAt);
   `);
+
+  try {
+    db.exec('ALTER TABLE graph_edge_usage ADD COLUMN unhelpfulCount INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // Column already exists.
+  }
 }

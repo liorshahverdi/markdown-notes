@@ -25,6 +25,7 @@ import {
   readProposal,
   readProposalByKey,
   recordEdgeHelpful,
+  recordEdgeUnhelpful,
   revertProposalRows,
   updateOverlayRelationType,
   updateProposalStatus,
@@ -294,12 +295,15 @@ export function transitiveSuggestions(graph: MaterializedGraph, entityId: string
 export function recordAnswerFeedback(
   db: Db,
   userId: string,
-  input: { query?: string; noteId?: string; relationIds?: string[] }
+  input: { query?: string; noteId?: string; relationIds?: string[]; helpful?: boolean }
 ): { evalAdded: boolean; edgesCredited: number } {
   const relationIds = (input.relationIds ?? []).filter((id) => typeof id === 'string' && id.length < 600).slice(0, 20);
-  recordEdgeHelpful(db, userId, relationIds);
+  const helpful = input.helpful !== false;
+  if (helpful) recordEdgeHelpful(db, userId, relationIds);
+  else recordEdgeUnhelpful(db, userId, relationIds);
   let evalAdded = false;
-  if (input.query && input.noteId) {
+  // Only answers you liked become expected results for the retrieval check.
+  if (helpful && input.query && input.noteId) {
     evalAdded = addEvalQuery(db, userId, input.query, input.noteId, 'feedback');
   }
   return { evalAdded, edgesCredited: relationIds.length };

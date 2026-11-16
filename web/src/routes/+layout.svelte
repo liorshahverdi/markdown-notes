@@ -3,6 +3,8 @@
 	import '../app.css';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
 	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
+	import GraphStatusPill from '$lib/components/GraphStatusPill.svelte';
+	import { graphStatus, refreshGraphStatus } from '$lib/stores/graph';
 	import { ollamaStatus } from '$lib/stores/rag';
 	import { chatOpen } from '$lib/stores/chat';
 	import { currentUser, logout } from '$lib/stores/user';
@@ -137,7 +139,11 @@
 
 		if (!isLoginPage) {
 			checkHealth();
-			healthInterval = setInterval(checkHealth, 30_000);
+			void refreshGraphStatus();
+			healthInterval = setInterval(() => {
+				checkHealth();
+				if (document.visibilityState === 'visible') void refreshGraphStatus();
+			}, 30_000);
 
 			// Initialize wake word detector if enabled in voice settings
 			try {
@@ -266,6 +272,12 @@
 						</svg>
 					</button>
 				</div>
+
+				<GraphStatusPill
+					status={$graphStatus}
+					modelStarting={leaseBusy}
+					onStartModel={() => restartLease()}
+				/>
 
 				{#if $currentUser}
 					<span class="hairline-v" style="height:18px"></span>

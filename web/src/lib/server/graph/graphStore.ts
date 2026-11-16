@@ -130,7 +130,7 @@ const PROPOSAL_COLUMNS =
 export function readProposals(
   db: Db,
   userId: string,
-  filter: { status?: GraphProposalStatus | GraphProposalStatus[]; kind?: GraphProposalKind; limit?: number } = {}
+  filter: { status?: GraphProposalStatus | GraphProposalStatus[]; kind?: GraphProposalKind; noteId?: string; limit?: number } = {}
 ): GraphProposal[] {
   const clauses = ['userId = ?'];
   const params: unknown[] = [userId];
@@ -142,6 +142,11 @@ export function readProposals(
   if (filter.kind) {
     clauses.push('kind = ?');
     params.push(filter.kind);
+  }
+  if (filter.noteId) {
+    // Made from this note, or citing it in provenance (JSON.stringify emits no spaces).
+    clauses.push('(noteId = ? OR instr(payloadJson, ?) > 0)');
+    params.push(filter.noteId, `"noteId":${JSON.stringify(filter.noteId)}`);
   }
   const limit = filter.limit ? ` LIMIT ${Math.max(1, Math.floor(filter.limit))}` : '';
   const rows = db
@@ -326,7 +331,7 @@ export function readOverlay(db: Db, userId: string): GraphOverlay {
   ).all(userId) as CustomEntityRow[];
   const pendingRelations = readProposals(db, userId, { status: 'pending', kind: 'relation' });
   const usageRows = db.prepare(
-    'SELECT relationId, useCount, helpfulCount, lastUsedAt, lastHelpfulAt FROM graph_edge_usage WHERE userId = ?'
+    'SELECT relationId, useCount, helpfulCount, unhelpfulCount, lastUsedAt, lastHelpfulAt FROM graph_edge_usage WHERE userId = ?'
   ).all(userId) as EdgeUsageRow[];
   return {
     relations,
@@ -366,6 +371,21 @@ export function recordEdgeHelpful(db: Db, userId: string, relationIds: string[])
   `);
   const tx = db.transaction((ids: string[]) => {
     for (const id of new Set(ids)) stmt.run(userId, id, now, now);
+  });
+  tx(relationIds);
+  bumpOverlayRevision(userId);
+}
+
+export function recordEdgeUnhelpful(db: Db, userId: string, relationIds: string[]): void {
+  if (relationIds.length === 0) return;
+  const now = Date.now();
+  const stmt = db.prepare(`
+    INSERT INTO graph_edge_usage (userId, relationId, useCount, helpfulCount, unhelpfulCount, lastUsedAt)
+    VALUES (?, ?, 1, 0, 1, ?)
+    ON CONFLICT(userId, relationId) DO UPDATE SET unhelpfulCount = unhelpfulCount + 1, lastUsedAt = excluded.lastUsedAt
+  `);
+  const tx = db.transaction((ids: string[]) => {
+    for (const id of new Set(ids)) stmt.run(userId, id, now);
   });
   tx(relationIds);
   bumpOverlayRevision(userId);

@@ -11,15 +11,10 @@
 	import { db, type ChatMessageRecord } from '$lib/db/index';
 	import AssistantAvatar from './AssistantAvatar.svelte';
 	import FileAnswerPanel from './FileAnswerPanel.svelte';
+	import CitationChip, { type CitationSource } from './CitationChip.svelte';
+	import AnswerFeedback from './AnswerFeedback.svelte';
 
-	interface Source {
-		id?: string;
-		noteId: string;
-		title: string;
-		relevanceScore: number;
-		kind?: 'wiki-page' | 'raw-source' | 'note' | 'note-chunk' | 'graph-edge' | 'wiki';
-		wikiPath?: string;
-	}
+	type Source = CitationSource;
 
 	type ChatCoverage = 'strong' | 'weak' | { noteCount: number; graphEdgeCount: number; hasEvidence: boolean };
 
@@ -506,18 +501,17 @@
 						{#if msg.sources && msg.sources.length > 0}
 							<div class="mt-1 flex flex-wrap gap-1">
 								{#each msg.sources as source}
-									<button
-										class="inline-flex items-center rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-										onclick={() => { sendSourceFeedback(msg, source); onSourceClick(source.noteId); }}
-										title="Relevance: {(source.relevanceScore * 100).toFixed(0)}%"
-									>
-										{#if source.kind}
-											<span class="mr-1 opacity-70">{source.kind}</span>
-										{/if}
-										{source.title}
-									</button>
+									<CitationChip
+										{source}
+										onOpen={(opened) => { sendSourceFeedback(msg, opened); onSourceClick(opened.noteId); }}
+									/>
 								{/each}
 							</div>
+							{#if msg.text && !(isLoading && msg === messages[messages.length - 1])}
+								<div class="mt-1">
+									<AnswerFeedback query={previousUserQuestion(messages.indexOf(msg))} sources={msg.sources} />
+								</div>
+							{/if}
 						{/if}
 
 						{#if msg.text && wikiCitations(msg.sources).length > 0}

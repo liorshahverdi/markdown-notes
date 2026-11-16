@@ -172,3 +172,34 @@ describe('buildNoteMemoryContext', () => {
     expect(context.graphEvidence.some((item) => item.from.name === target!.from.name && item.to.name === target!.to.name)).toBe(false);
   });
 });
+
+describe('graph-edge citations', () => {
+  it('carry readable endpoints, relation, review state and the quoted evidence', () => {
+    const billing = { id: 'object:billing', name: 'Billing', type: 'Object' as const, sourceNoteIds: ['p1'] };
+    const ledger = { id: 'object:ledger', name: 'Ledger', type: 'Object' as const, sourceNoteIds: ['p1'] };
+    const context = buildNoteMemoryContext({
+      notes: [{ id: 'p1', title: 'Payments', content: 'The Billing service depends on the Ledger for balances.', dateModified: 1, isPinned: false }],
+      folders: [],
+      query: 'billing ledger',
+      graph: {
+        entities: [billing, ledger],
+        relations: [{
+          id: 'overlay:r1',
+          fromEntityId: billing.id,
+          toEntityId: ledger.id,
+          type: 'depends_on',
+          confidence: 0.9,
+          provenance: [{ noteId: 'p1', excerpt: 'Billing service depends on the Ledger', method: 'llm' }],
+          metadata: { reviewState: 'auto', proposalId: 'p-1' },
+        }],
+      },
+    });
+    const edge = context.citations.find((citation) => citation.kind === 'graph-edge');
+    expect(edge).toMatchObject({
+      id: 'overlay:r1',
+      noteId: 'p1',
+      excerpt: 'Billing service depends on the Ledger',
+      edge: { fromName: 'Billing', toName: 'Ledger', type: 'depends_on', reviewState: 'auto' },
+    });
+  });
+});

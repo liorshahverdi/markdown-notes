@@ -26,6 +26,9 @@
 	import Editor from '$lib/components/Editor.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import Preview from '$lib/components/Preview.svelte';
+	import NoteSuggestions from '$lib/components/NoteSuggestions.svelte';
+	import { graphStatus } from '$lib/stores/graph';
+	import { highlightQuote } from '$lib/markdown/quoteHighlight';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ChatPanel from '$lib/components/ChatPanel.svelte';
@@ -33,6 +36,7 @@
 	import { getHomeShellPolicy } from '$lib/navigation/homeShell';
 
 	// Dictation state
+	let previewEl = $state<HTMLElement | null>(null);
 	let isDictating = $state(false);
 	let dictationManager: DictationManager | null = null;
 	let insertAtCursor: ((text: string) => void) | null = null;
@@ -343,7 +347,16 @@
 				{#if $chatOpen}
 					<ChatPanel onSourceClick={(id) => selectedNoteId.set(id)} />
 				{:else}
-					<Preview markdown={$selectedNote.content} />
+					{#if !isReadOnly}
+						<NoteSuggestions
+							noteId={$selectedNote.id}
+							refreshKey={String($graphStatus?.lastRun?.finishedAt ?? "")}
+							onHighlight={(quote) => highlightQuote(previewEl, quote)}
+						/>
+					{/if}
+					<div bind:this={previewEl}>
+						<Preview markdown={$selectedNote.content} />
+					</div>
 				{/if}
 			</div>
 		</div>

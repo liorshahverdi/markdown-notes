@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getModelLease } from '$lib/server/modelLease';
+import { enqueueGraphUpdate } from '$lib/server/graph/graphWorker';
 
 /** Model lifecycle is an interactive-user action, never an API-token capability. */
 function requireSession(locals: App.Locals) {
@@ -32,6 +33,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     try { peers = await lease.residentPeers(); } catch { throw error(503, 'Fleet status unavailable'); }
     if (peers.length) return json({ needsConfirm: true, peers, lease: lease.snapshot() }, { status: 409 });
   }
-  void lease.restart();
+  const userId = locals.user?.id;
+  void lease.restart().then((snapshot) => {
+    // Graph passes skip model stages while Laguna is unloaded; resume them now.
+    if (snapshot.phase === 'held' && userId) enqueueGraphUpdate(userId, 'model-ready');
+  });
   return json({ lease: lease.snapshot() }, { status: 202 });
 };

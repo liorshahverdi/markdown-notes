@@ -121,3 +121,14 @@ export interface GraphRunSummary {
   metrics?: GraphQualityMetrics | null;
   error?: string | null;
 }
+
+/** Header pill status (GET /api/graph/status). */
+export interface GraphLoopStatus {
+  pendingReview: number;
+  /** Notes whose model stages have not run on their current content. */
+  queuedNotes: number;
+  running: boolean;
+  lastRun: Pick<GraphRunSummary, 'id' | 'trigger' | 'status' | 'startedAt' | 'finishedAt'> | null;
+  /** The last pass had model work to do but the model was not loaded. */
+  modelSkipped: boolean;
+}

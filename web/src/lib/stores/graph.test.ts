@@ -8,7 +8,10 @@ import {
   graphRelations,
   loadGraphData,
   rejectRelation,
+  refreshGraphStatus,
+  graphStatus,
   reviewProposalAction,
+  runEnrichment,
   selectedEdgeId,
   updateRelation,
 } from './graph';
@@ -26,6 +29,8 @@ const relations: GraphRelation[] = [
 ];
 
 type FetchCall = { url: string; body?: unknown };
+let statusFails = false;
+let statusPending = 3;
 
 function mockServer() {
   const calls: FetchCall[] = [];
@@ -35,6 +40,10 @@ function mockServer() {
       return Response.json({
         relations: [{ id: 'ephemeral:transitive:a:c', fromEntityId: 'a', toEntityId: 'c', type: 'transitive', metadata: { reviewState: 'ephemeral' } }],
       });
+    }
+    if (url === '/api/graph/status') {
+      if (statusFails) return new Response('nope', { status: 500 });
+      return Response.json({ pendingReview: statusPending, queuedNotes: 2, running: false, lastRun: null, modelSkipped: false });
     }
     if (url.startsWith('/api/graph/proposals/')) {
       return Response.json({ proposal: { id: 'p1', status: 'applied' } });
@@ -107,5 +116,42 @@ describe('graph store (server-backed)', () => {
     const calls = mockServer();
     await reviewProposalAction('p1', 'undo');
     expect(calls[0]).toEqual({ url: '/api/graph/proposals/p1', body: { action: 'undo' } });
+  });
+});
+
+describe('graph loop status', () => {
+  beforeEach(() => {
+    statusFails = false;
+    statusPending = 3;
+    graphStatus.set(null);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('loads the loop status and keeps the last known value when the hub is unreachable', async () => {
+    mockServer();
+    await refreshGraphStatus();
+    expect(get(graphStatus)).toMatchObject({ pendingReview: 3, queuedNotes: 2 });
+
+    statusFails = true;
+    await refreshGraphStatus();
+    expect(get(graphStatus)).toMatchObject({ pendingReview: 3 });
+  });
+
+  it('refreshes the status after a review decision so the header count stays current', async () => {
+    const calls = mockServer();
+    await refreshGraphStatus();
+    statusPending = 2;
+    await reviewProposalAction('p1', 'accept');
+    expect(calls.filter((c) => c.url === '/api/graph/status')).toHaveLength(2);
+    expect(get(graphStatus)?.pendingReview).toBe(2);
+  });
+
+  it('refreshes the status after an edge review and a manual pass', async () => {
+    const calls = mockServer();
+    await loadGraphData();
+    await acceptRelation('overlay:r1');
+    expect(calls.filter((c) => c.url === '/api/graph/status')).toHaveLength(1);
+    await runEnrichment();
+    expect(calls.filter((c) => c.url === '/api/graph/status')).toHaveLength(2);
   });
 });

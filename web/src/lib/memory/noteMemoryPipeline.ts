@@ -147,7 +147,8 @@ export function buildNoteMemoryContext(input: {
       item.relation,
       `${item.from.name} ${item.relation.type} ${item.to.name}`,
       item.score,
-      item.sourceNoteIds[0]
+      item.sourceNoteIds[0],
+      { fromName: item.from.name, toName: item.to.name }
     )
   );
 

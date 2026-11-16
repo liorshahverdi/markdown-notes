@@ -57,6 +57,12 @@ Every proposal has a stable `dedupeKey` (UNIQUE), so rejected or undone items ar
 - When the chat UI opens a cited source, it calls `POST /api/graph/feedback`. That credits the edges (`helpfulCount`) and adds `(question → note)` to the eval set.
 - Unreviewed automatic edges that are never used decay after 30 days (down to 25% at least); helpful edges get a boost.
 
+## UX surfaces
+
+- **Header pill** (`GraphStatusPill`, `GET /api/graph/status`): pending review count, notes queued for model stages, running state. When the last pass skipped the model, it offers to start Laguna. `POST /api/llm/lease` queues a `model-ready` pass once the lease is held.
+- **In-note suggestions** (`NoteSuggestions`, `GET /api/graph/proposals?noteId=&status=pending`): proposals made from the note or citing it in provenance. Hovering highlights the quote in the preview via the CSS Custom Highlight API (`::highlight(graph-evidence)`).
+- **Chat citations** (`CitationChip`, `AnswerFeedback`): graph-edge citations carry `fromName/toName/reviewState` and the quote. 👍 credits the cited edges and adds an eval query; 👎 sets `unhelpfulCount`, which lowers non-accepted edges by 0.1 each (at most 0.3).
+
 ## Retrieval
 
 `graphEdgeQuality` multiplies four factors: review status (accepted > base > auto), edge type, confidence/weight, and whether the edge has provenance. Pending and ephemeral edges are never used. Automatic edges are labeled `[unreviewed model suggestion]` in the prompt.

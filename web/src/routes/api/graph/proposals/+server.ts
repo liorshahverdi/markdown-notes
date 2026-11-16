@@ -17,7 +17,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
     : undefined;
   const kind = kindParam && KINDS.includes(kindParam as GraphProposalKind) ? (kindParam as GraphProposalKind) : undefined;
   const limit = Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, 1000);
-  const proposals = readProposals(getDb(), locals.user!.id, { status, kind, limit });
+  const noteId = url.searchParams.get('noteId') || undefined;
+  const proposals = readProposals(getDb(), locals.user!.id, { status, kind, noteId, limit });
   return json({ proposals });
 };
 

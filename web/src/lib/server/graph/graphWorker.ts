@@ -21,6 +21,7 @@ import { getDb } from '../database';
 import { readFolders, readNotes } from '../notesFile';
 import { checkLlamaCppHealth, completeLlamaCpp } from '../llamaCpp';
 import type {
+  GraphLoopStatus,
   GraphProposal,
   GraphProposalSource,
   GraphRunSummary,
@@ -52,6 +53,7 @@ import {
   readEvalQueries,
   readNoteStates,
   readProposals,
+  readRuns,
   readReviewStats,
   revertProposalRows,
   startRun,
@@ -124,7 +126,41 @@ function proposalEligible(proposal: GraphProposal, thresholds: Map<GraphProposal
   return true;
 }
 
+const runningUsers = new Set<string>();
+export type { GraphLoopStatus };
+
+export function getGraphStatus(db: Db, userId: string, notes: NoteRecord[]): GraphLoopStatus {
+  const implicit = readNoteStates(db, userId, STAGE_IMPLICIT);
+  const validate = readNoteStates(db, userId, STAGE_VALIDATE);
+  const queuedNotes = notes.filter((note) => {
+    const hash = noteContentHash(note);
+    return needsStage(implicit.get(note.id), hash) || needsStage(validate.get(note.id), hash);
+  }).length;
+  const pendingReview = (db
+    .prepare("SELECT COUNT(*) AS count FROM graph_proposals WHERE userId = ? AND status = 'pending'")
+    .get(userId) as { count: number }).count;
+  const last = readRuns(db, userId, 1)[0] ?? null;
+  return {
+    pendingReview,
+    queuedNotes,
+    running: runningUsers.has(userId),
+    lastRun: last
+      ? { id: last.id, trigger: last.trigger, status: last.status, startedAt: last.startedAt, finishedAt: last.finishedAt }
+      : null,
+    modelSkipped: Boolean(last && last.stats.llmAvailable === false && queuedNotes > 0),
+  };
+}
+
 export async function runGraphPass(options: GraphPassOptions): Promise<GraphRunSummary> {
+  runningUsers.add(options.userId);
+  try {
+    return await runGraphPassInner(options);
+  } finally {
+    runningUsers.delete(options.userId);
+  }
+}
+
+async function runGraphPassInner(options: GraphPassOptions): Promise<GraphRunSummary> {
   const { db, userId, notes, folders } = options;
   const runId = startRun(db, userId, options.trigger);
   const startedAt = Date.now();
