@@ -325,6 +325,8 @@ If Laguna is not loaded, the model stages are skipped; the loop never loads it.
 - **Header pill**: "Graph · N to review" shows the review queue and how many notes are waiting for Laguna. If a pass skipped the model because Laguna wasn't loaded, the pill offers **Start Laguna**, and a pass runs automatically once Laguna is ready.
 - **Chat answers**: Graph citations read as "Billing → depends on → Ledger". Unreviewed suggestions are marked, and hovering a citation shows its quote. Rate answers with 👍/👎: 👍 credits the cited edges and saves the question for the retrieval check, and 👎 lowers the weight of unreviewed edges.
 
+Merge suggestions ask **Same thing?** and show which notes each name comes from. Choose **Same thing** to combine them (you can undo it later) or **Different things** to keep them apart for good. Suggestions whose entities have since disappeared from your notes are marked obsolete and leave the queue automatically.
+
 The **Self-improvement** panel lists proposals waiting for review, with **Approve**/**Reject**. Applied items have **Confirm**/**Undo**. Edges can also be accepted, rejected or retyped from the edge evidence drawer. Rejected and undone proposals are never proposed again, even after **Re-process all notes**.
 
 ### Learning from feedback

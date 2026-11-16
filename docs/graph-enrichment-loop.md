@@ -42,6 +42,8 @@ The server owns the knowledge graph. The browser only displays it and forwards r
 6. **Regression check**: compute recall@k and MRR on `graph_eval_queries` before and after the auto-applies. If either gets worse, revert this pass's auto-applies back to pending.
 7. Record the stats, eval result and quality metrics in `graph_runs`.
 
+Pending proposals whose entities, endpoints or evidence no longer exist are marked `obsolete` at the start of each pass (`stats.obsoleteProposals`).
+
 Every proposal has a stable `dedupeKey` (UNIQUE), so rejected or undone items are never proposed again, even after `POST /api/graph/rebuild`.
 
 ## Triggers
@@ -92,8 +94,12 @@ Every proposal has a stable `dedupeKey` (UNIQUE), so rejected or undone items ar
 | `GRAPH_ENRICH_LLM_NOTES_PER_PASS` | 5 (10 for manual runs) | Model budget per pass |
 | `GRAPH_AUTO_APPLY_THRESHOLD` | unset | Can only make auto-apply stricter |
 
+## Event extraction
+
+Named events come only from 1–4 capitalized or acronym words directly before an event word, within one sentence or clause. Leading determiners are dropped, and a lone non-acronym word at the start of a sentence or list item is ignored. This replaced a ±30-character case-insensitive window that produced sentence fragments (83 → 10 named events on the real corpus).
+
 ## Known limits
 
 - Embedding similarity for duplicates is not used, because the app disables embeddings (`serverEmbeddings.ts`). Laguna confirmation replaces it.
 - The regression check reverts a whole pass; it does not find the single change that caused the drop.
-- The base regex extractor has pre-existing noise: headings identical to the note title become duplicate topic entities, and sentence fragments get extracted as Events. The loop surfaces some of these for review but does not fix the extractor.
+- Headings identical to the note title still become duplicate topic entities. The loop surfaces some of these for review but does not fix the extractor.

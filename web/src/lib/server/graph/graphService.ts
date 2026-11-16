@@ -9,7 +9,7 @@ import { readFolders, readNotes } from '../notesFile';
 import { readGraphRelationReviews, upsertGraphRelationReview } from '../graphRelationReviews';
 import { buildGraphRelationReviewKeyForRelation } from '../../graph/relationReviewKey';
 import { findTransitiveCandidatesForEntity } from '../../graph/transitiveInference';
-import type { GraphProposal, RelationProposalPayload } from '../../graph/proposals';
+import type { GraphProposal, MergeProposalPayload, ProposalEntityContext, RelationProposalPayload } from '../../graph/proposals';
 import type { GraphEdgeProvenance, GraphRelation } from '../../../types/graph';
 import type { FolderRecord, NoteRecord } from '../../../types/note';
 import { materializeGraph, reviewStateOf, type MaterializedGraph } from './materialize';
@@ -307,4 +307,39 @@ export function recordAnswerFeedback(
     evalAdded = addEvalQuery(db, userId, input.query, input.noteId, 'feedback');
   }
   return { evalAdded, edgesCredited: relationIds.length };
+}
+
+// ---------------------------------------------------------------------------
+// Review context
+// ---------------------------------------------------------------------------
+const CONTEXT_NOTE_LIMIT = 3;
+
+/** Attach where each name in a merge comes from, so reviewers can judge it. */
+export function attachProposalContext(
+  proposals: GraphProposal[],
+  graph: MaterializedGraph,
+  notes: NoteRecord[]
+): GraphProposal[] {
+  const entityById = new Map(graph.entities.map((entity) => [entity.id, entity]));
+  const titleById = new Map(notes.map((note) => [note.id, note.title]));
+  const describe = (key: string, fallbackName: string): ProposalEntityContext => {
+    const entity = entityById.get(key);
+    const noteIds = entity?.sourceNoteIds ?? [];
+    return {
+      name: entity?.name ?? fallbackName,
+      noteCount: noteIds.length,
+      notes: noteIds
+        .filter((id) => titleById.has(id))
+        .slice(0, CONTEXT_NOTE_LIMIT)
+        .map((id) => ({ id, title: titleById.get(id)! })),
+    };
+  };
+  return proposals.map((proposal) => {
+    if (proposal.kind !== 'merge') return proposal;
+    const payload = proposal.payload as MergeProposalPayload;
+    return {
+      ...proposal,
+      context: { merge: { keep: describe(payload.keepKey, payload.keepName), remove: describe(payload.removeKey, payload.removeName) } },
+    };
+  });
 }

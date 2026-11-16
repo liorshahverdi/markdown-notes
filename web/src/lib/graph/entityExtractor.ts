@@ -91,6 +91,42 @@ const DATE_PATTERNS = [
 
 const TEMPORAL_MARKERS = /\b(meeting|deadline|milestone|conference|workshop|sprint|release|launch|event|ceremony|presentation|demo|review|standup|retrospective|kickoff)\b/gi;
 
+const EVENT_QUALIFIER = /^(?:[A-Z][A-Za-z0-9&'-]*|[0-9]+[A-Za-z][A-Za-z0-9-]*)$/;
+const EVENT_LEADING_STOPWORDS = new Set([
+  'the', 'a', 'an', 'our', 'my', 'your', 'their', 'his', 'her', 'its',
+  'this', 'that', 'these', 'those', 'next', 'last', 'each', 'every',
+]);
+const MAX_EVENT_QUALIFIERS = 4;
+const LIST_MARKER = /^(?:[-*+>#]+|\d+[.)])$/;
+const ACRONYM = /^(?=.*[A-Z])[A-Z0-9-]{2,}$/;
+
+/**
+ * A named event is 1-4 capitalized/acronym words directly before an event word
+ * in the same sentence ("Sprint Planning meeting", "AMS Pilot review").
+ * Lowercase prose never yields an event, so no sentence fragments.
+ */
+function namedEventBefore(content: string, markerIndex: number, marker: string): string | null {
+  const before = content.slice(Math.max(0, markerIndex - 120), markerIndex);
+  const sentenceStart = Math.max(...['.', '!', '?', '\n', ':', ';', ',', '(', ')', '[', ']', '—', '–'].map((c) => before.lastIndexOf(c)));
+  const clause = before.slice(sentenceStart + 1);
+  if (clause.length > 0 && !/\s$/.test(clause)) return null; // marker must start a word
+  const tokens = clause.trim().split(/\s+/).filter(Boolean);
+  let first = tokens.length;
+  while (first > 0 && tokens.length - first < MAX_EVENT_QUALIFIERS && EVENT_QUALIFIER.test(tokens[first - 1])) first--;
+  let strippedStopword = false;
+  while (first < tokens.length && EVENT_LEADING_STOPWORDS.has(tokens[first].toLowerCase())) {
+    first++;
+    strippedStopword = true;
+  }
+  const qualifiers = tokens.slice(first);
+  if (qualifiers.length === 0) return null;
+  // A lone capitalized word at the start of a sentence/list item is capitalized
+  // because of its position ("Make release…", "Further review…"), not because it names something.
+  const atSentenceStart = !strippedStopword && tokens.slice(0, first).every((token) => LIST_MARKER.test(token));
+  if (atSentenceStart && qualifiers.length === 1 && !ACRONYM.test(qualifiers[0])) return null;
+  return `${qualifiers.join(' ')} ${marker}`;
+}
+
 // Object/tool extraction patterns
 const TOOL_PATTERNS = /\b(?:using|built with|powered by|implemented in|written in|based on|running on)\s+([A-Z][a-zA-Z0-9.]+(?:\s+[A-Z][a-zA-Z0-9.]+)?)\b/g;
 
@@ -236,22 +272,12 @@ export function extractEntities(
 
   let temporalMatch: RegExpExecArray | null;
   while ((temporalMatch = TEMPORAL_MARKERS.exec(content)) !== null) {
-    // Look for a contextual name around the temporal marker
-    const markerWord = temporalMatch[1];
-    const startIdx = Math.max(0, temporalMatch.index - 30);
-    const endIdx = Math.min(content.length, temporalMatch.index + temporalMatch[0].length + 30);
-    const context = content.slice(startIdx, endIdx);
-    // Extract a phrase around the marker (capitalize first letter)
-    const phraseMatch = context.match(/([A-Z][a-zA-Z\s]+(?:meeting|deadline|milestone|conference|workshop|sprint|release|launch|event|ceremony|presentation|demo|review|standup|retrospective|kickoff))/i);
-    if (phraseMatch) {
-      const eventName = phraseMatch[1].trim();
-      if (eventName.length > 3 && eventName.length < 60) {
-        const key = `Event::${eventName.toLowerCase()}`;
-        if (!entityMap.has(key)) {
-          entityMap.set(key, { name: eventName, type: 'Event', confidence: 0.7 });
-          relations.push({ fromName: eventName, toName: title, type: 'mentioned_in' });
-        }
-      }
+    const eventName = namedEventBefore(content, temporalMatch.index, temporalMatch[0]);
+    if (!eventName) continue;
+    const key = `Event::${eventName.toLowerCase()}`;
+    if (!entityMap.has(key)) {
+      entityMap.set(key, { name: eventName, type: 'Event', confidence: 0.7 });
+      relations.push({ fromName: eventName, toName: title, type: 'mentioned_in' });
     }
   }
 

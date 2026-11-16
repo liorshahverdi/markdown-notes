@@ -134,6 +134,44 @@ describe('entityExtractor', () => {
       expect(events[0].name).toBe('January 15, 2024');
     });
 
+    describe('named events', () => {
+      const eventNames = (content: string) =>
+        extractEntities('note-1', 'My Note', content)
+          .entities.filter((e) => e.type === 'Event' && !/\d{4}/.test(e.name))
+          .map((e) => e.name);
+
+      it('names an event from the capitalized words directly before the event word', () => {
+        expect(eventNames('We ran the Sprint Planning meeting today.')).toEqual(['Sprint Planning meeting']);
+        expect(eventNames('Prep for the AMS Pilot review on Friday.')).toEqual(['AMS Pilot review']);
+      });
+
+      it('drops leading determiners', () => {
+        expect(eventNames('The Q3 Release is next week.')).toEqual(['Q3 Release']);
+      });
+
+      it('never produces sentence fragments from lowercase prose', () => {
+        expect(eventNames('This needs discussion in the upcoming technical review.')).toEqual([]);
+        expect(eventNames('It was included in the upcoming technical review.')).toEqual([]);
+        expect(eventNames("I wasn't part of the the the presentation also. It's the morning meeting.")).toEqual([]);
+      });
+
+      it('does not treat a bare event word as a named event', () => {
+        expect(eventNames('The meeting went long. Review the PR. Our Meeting is at noon.')).toEqual([]);
+      });
+
+      it('ignores a single sentence-initial word, which is capitalized only because it starts the sentence', () => {
+        expect(eventNames('- [ ] Make release notes for v2\nFurther review needed. Generate release.')).toEqual([]);
+        expect(eventNames('#### OBS-703 — Generate release drift report\n- Add release gate')).toEqual([]);
+        // ...but multi-word names and acronyms at the start of a sentence still count.
+        expect(eventNames('AMS Standup moved to 10am. QBR review on Friday.')).toEqual(['AMS Standup', 'QBR review']);
+      });
+
+      it('does not join words across sentences or lines', () => {
+        expect(eventNames('Notes from Alice.\nReview the PR')).toEqual([]);
+        expect(eventNames('Thanks Bob. Release notes are attached.')).toEqual([]);
+      });
+    });
+
     it('creates mentioned_in relations for Event entities', () => {
       const content = 'Deadline: 2024-06-30';
       const result = extractEntities('note-1', 'My Note', content);

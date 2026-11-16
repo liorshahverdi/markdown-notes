@@ -68,9 +68,11 @@ import {
   parseImplicitRelations,
   parseJsonLoose,
   parseValidation,
+  noteMentions,
   relevantEntitiesForNote,
   type CompleteJson,
 } from './llmEnrichment';
+import type { MaterializedGraph } from './materialize';
 import { materializeForUser } from './graphService';
 
 type Db = Database.Database;
@@ -110,6 +112,29 @@ export function noteContentHash(note: NoteRecord): string {
 function needsStage(state: { contentHash: string; attempts: number } | undefined, hash: string): boolean {
   if (!state) return true;
   return state.contentHash !== hash;
+}
+
+/** A pending proposal is obsolete when what it talks about is gone from the notes. */
+function isProposalObsolete(proposal: GraphProposal, graph: MaterializedGraph, notesById: Map<string, NoteRecord>): boolean {
+  const ids = new Set(graph.entities.map((entity) => entity.id));
+  const exists = (key: string) => ids.has(graph.resolveKey(key));
+  switch (proposal.kind) {
+    case 'merge': {
+      const payload = proposal.payload as MergeProposalPayload;
+      return !exists(payload.keepKey) || !exists(payload.removeKey) || graph.resolveKey(payload.keepKey) === graph.resolveKey(payload.removeKey);
+    }
+    case 'relation': {
+      const payload = proposal.payload as RelationProposalPayload;
+      return !exists(payload.fromKey) || !exists(payload.toKey);
+    }
+    case 'type_correction':
+      return !exists((proposal.payload as TypeCorrectionPayload).entityKey);
+    case 'new_entity': {
+      const payload = proposal.payload as NewEntityPayload;
+      const note = notesById.get(payload.noteId);
+      return !note || !noteMentions(`${note.title}\n${note.content}`, payload.name);
+    }
+  }
 }
 
 function proposalEligible(proposal: GraphProposal, thresholds: Map<GraphProposalSource, CalibratedThreshold>): boolean {
@@ -179,6 +204,16 @@ async function runGraphPassInner(options: GraphPassOptions): Promise<GraphRunSum
   };
   try {
     const graph = materializeForUser({ db, userId, notes, folders, useCache: false });
+    const notesById = new Map(notes.map((note) => [note.id, note]));
+    let obsolete = 0;
+    for (const proposal of readProposals(db, userId, { status: 'pending' })) {
+      if (isProposalObsolete(proposal, graph, notesById)) {
+        updateProposalStatus(db, userId, proposal.id, { status: 'obsolete', decidedBy: 'auto' });
+        obsolete += 1;
+      }
+    }
+    stats.obsoleteProposals = obsolete;
+
     const allProposals = readProposals(db, userId);
     const proposedRelationPairs = new Set<string>();
     const proposedMergePairs = new Set<string>();

@@ -20,8 +20,9 @@ export type GraphProposalSource =
  * applied  — in the graph (auto-applied or user-approved)
  * rejected — refused; never proposed again
  * undone   — applied, then reverted; never proposed again
+ * obsolete — was pending, but its entities/evidence no longer exist in the notes
  */
-export type GraphProposalStatus = 'pending' | 'applied' | 'rejected' | 'undone';
+export type GraphProposalStatus = 'pending' | 'applied' | 'rejected' | 'undone' | 'obsolete';
 
 export interface RelationProposalPayload {
   fromKey: string;
@@ -85,6 +86,19 @@ export interface GraphProposal {
   decidedBy?: 'auto' | 'user' | null;
   /** Explicit human verdict; drives threshold calibration. */
   reviewOutcome?: 'accepted' | 'rejected' | null;
+  /** Read-time context for review UIs (not stored). */
+  context?: ProposalContext;
+}
+
+export interface ProposalEntityContext {
+  name: string;
+  noteCount: number;
+  /** Up to 3 source notes. */
+  notes: Array<{ id: string; title: string }>;
+}
+
+export interface ProposalContext {
+  merge?: { keep: ProposalEntityContext; remove: ProposalEntityContext };
 }
 
 /** Review state attached to materialized relations in `metadata.reviewState`. */

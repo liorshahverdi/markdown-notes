@@ -2,11 +2,12 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/database';
 import { readProposals } from '$lib/server/graph/graphStore';
-import { createUserRelation } from '$lib/server/graph/graphService';
+import { attachProposalContext, createUserRelation, getUserGraph } from '$lib/server/graph/graphService';
+import { readFolders, readNotes } from '$lib/server/notesFile';
 import type { GraphProposalKind, GraphProposalStatus } from '$lib/graph/proposals';
 import type { GraphRelation } from '../../../../types/graph';
 
-const STATUSES: GraphProposalStatus[] = ['pending', 'applied', 'rejected', 'undone'];
+const STATUSES: GraphProposalStatus[] = ['pending', 'applied', 'rejected', 'undone', 'obsolete'];
 const KINDS: GraphProposalKind[] = ['relation', 'merge', 'type_correction', 'new_entity'];
 
 export const GET: RequestHandler = async ({ url, locals }) => {
@@ -18,8 +19,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   const kind = kindParam && KINDS.includes(kindParam as GraphProposalKind) ? (kindParam as GraphProposalKind) : undefined;
   const limit = Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, 1000);
   const noteId = url.searchParams.get('noteId') || undefined;
-  const proposals = readProposals(getDb(), locals.user!.id, { status, kind, noteId, limit });
-  return json({ proposals });
+  const userId = locals.user!.id;
+  const proposals = readProposals(getDb(), userId, { status, kind, noteId, limit });
+  if (!proposals.some((proposal) => proposal.kind === 'merge')) return json({ proposals });
+  // Merges need context (where each name comes from) to be reviewable.
+  const notes = readNotes(userId);
+  const graph = getUserGraph(userId, { notes, folders: readFolders(userId) });
+  return json({ proposals: attachProposalContext(proposals, graph, notes) });
 };
 
 /** Create a relation explicitly (e.g. accepting a transitive suggestion). */

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { GraphProposal, GraphProposalStatus } from '../graph/proposals';
+  import type { GraphProposal, GraphProposalStatus, ProposalEntityContext } from '../graph/proposals';
 
   interface Props {
     improvements: GraphProposal[];
@@ -23,7 +23,7 @@
 
   const sourceLabels: Record<string, string> = {
     cooccurrence: 'co-occurrence',
-    duplicate: 'duplicate',
+    duplicate: 'similar names',
     llm_implicit: 'model: relation',
     llm_validation: 'model: type check',
     llm_missed: 'model: missed entity',
@@ -36,6 +36,7 @@
     pending: 'bg-yellow-900 text-yellow-300',
     rejected: 'bg-red-900 text-red-300',
     undone: 'bg-gray-700 text-gray-300',
+    obsolete: 'bg-gray-700 text-gray-400',
   };
 
   let visible = $derived(
@@ -51,6 +52,12 @@
       return proposal.decidedBy === 'auto' ? 'auto-applied' : 'applied';
     }
     return proposal.status;
+  }
+
+  function whereFrom(entity: ProposalEntityContext): string {
+    if (entity.notes.length === 0) return 'no longer in any note';
+    const extra = entity.noteCount - entity.notes.length;
+    return `in ${entity.notes.map((note) => note.title).join(', ')}${extra > 0 ? ` +${extra} more` : ''}`;
   }
 
   async function act(proposal: GraphProposal, handler?: (proposal: GraphProposal) => void | Promise<void>) {
@@ -85,10 +92,27 @@
       </p>
     {:else}
       {#each visible as proposal (proposal.id)}
-        <div class="flex items-start gap-3 p-3 bg-gray-800 rounded-lg border border-gray-700">
+        {@const merge = proposal.kind === 'merge' ? proposal.context?.merge : undefined}
+        <div
+          class="flex items-start gap-3 p-3 bg-gray-800 rounded-lg border border-gray-700"
+          role={merge ? 'group' : undefined}
+          aria-label={merge ? 'Same thing?' : undefined}
+        >
           <span class="text-lg" title={proposal.kind}>{kindIcons[proposal.kind] ?? '?'}</span>
           <div class="flex-1 min-w-0">
-            <p class="text-sm text-gray-200 break-words">{proposal.description}</p>
+            {#if merge}
+              <p class="text-xs uppercase tracking-wide text-gray-400">Same thing?</p>
+              <ul class="mt-1 space-y-1 text-sm text-gray-200">
+                {#each [merge.remove, merge.keep] as entity (entity.name)}
+                  <li>
+                    <span class="break-words">“{entity.name}”</span>
+                    <span class="block text-xs text-gray-400">{whereFrom(entity)}</span>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="text-sm text-gray-200 break-words">{proposal.description}</p>
+            {/if}
             <p class="text-xs text-gray-400 mt-1 flex flex-wrap items-center gap-1">
               <span>{sourceLabels[proposal.source] ?? proposal.source}</span>
               <span>· {(proposal.confidence * 100).toFixed(0)}%</span>
@@ -100,13 +124,15 @@
               <button
                 disabled={busyId === proposal.id}
                 onclick={() => act(proposal, onAccept)}
+                title={merge ? 'Combine them into one entity (you can undo this later)' : undefined}
                 class="text-xs px-2 py-1 bg-green-800 hover:bg-green-700 text-green-100 rounded border border-green-700"
-              >Approve</button>
+              >{merge ? 'Same thing' : 'Approve'}</button>
               <button
                 disabled={busyId === proposal.id}
                 onclick={() => act(proposal, onReject)}
+                title={merge ? 'Keep them separate and never suggest this again' : undefined}
                 class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded border border-gray-600"
-              >Reject</button>
+              >{merge ? 'Different things' : 'Reject'}</button>
             {:else if proposal.status === 'applied'}
               {#if proposal.decidedBy === 'auto' && !proposal.reviewOutcome}
                 <button
@@ -119,7 +145,7 @@
                 disabled={busyId === proposal.id}
                 onclick={() => act(proposal, onUndo)}
                 class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded border border-gray-600"
-              >Undo</button>
+              >{proposal.kind === 'merge' ? 'Undo merge' : 'Undo'}</button>
             {/if}
           </div>
         </div>
