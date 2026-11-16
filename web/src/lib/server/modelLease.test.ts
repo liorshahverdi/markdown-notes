@@ -108,3 +108,16 @@ describe('hub model lease', () => {
     expect(snap.error).not.toContain(TOKEN);
   });
 });
+
+describe("defaultRunner configuration", () => {
+  it("refuses to run without MODEL_LEASE_SCRIPT instead of guessing a host-specific path", async () => {
+    const previous = process.env.MODEL_LEASE_SCRIPT;
+    delete process.env.MODEL_LEASE_SCRIPT;
+    try {
+      const { defaultRunner } = await import("./modelLease");
+      await expect(defaultRunner(["remote-status"], {})).rejects.toThrow(/MODEL_LEASE_SCRIPT is not configured/);
+    } finally {
+      if (previous !== undefined) process.env.MODEL_LEASE_SCRIPT = previous;
+    }
+  });
+});
