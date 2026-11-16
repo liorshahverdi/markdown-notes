@@ -58,6 +58,7 @@ npm rebuild better-sqlite3
 npm run build
 ```
 
+
 ### Docker Compose
 
 ```bash
@@ -75,7 +76,7 @@ export LLAMACPP_MODEL=laguna-xs-2.1-q4_k_m
 export LLAMACPP_API_KEY='<private backend key>'
 ```
 
-Use an already-running authenticated llama.cpp Laguna XS instance. The app never activates, switches or stops shared fleet models. No Ollama service or embedding model is needed. Remote clients use the app URL; backend credentials remain server-only. For Docker, loopback refers to the container: configure a reviewed local network arrangement before attempting host inference (or run the app as a native Node service).
+Use an authenticated llama.cpp Laguna XS instance. Background work (graph enrichment) only uses the model when it is already loaded. Loading it is an explicit user action: the Laguna/Graph header buttons acquire a fleet lease, which may stop another unleased resident model after confirmation. The lease is released after 20 idle minutes or when the server stops. No Ollama service or embedding model is needed. Remote clients use the app URL; backend credentials remain server-only. For Docker, loopback refers to the container: configure a reviewed local network arrangement before attempting host inference (or run the app as a native Node service).
 
 ### CLI
 
@@ -104,6 +105,7 @@ npm run build
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Graph enrichment loop](docs/graph-enrichment-loop.md)
 - [Development](docs/development.md)
 - [Testing](docs/testing.md)
 - [Security notes](docs/security.md)
