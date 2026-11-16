@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { readFolders, upsertFolder, deleteFolder } from '$lib/server/notesFile';
+import { enqueueGraphUpdate } from '$lib/server/graph/graphWorker';
 
 export const GET: RequestHandler = async ({ locals }) => {
   const userId = locals.user!.id;
@@ -17,6 +18,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   }
 
   upsertFolder(userId, body.folder);
+  enqueueGraphUpdate(userId, 'folder-change');
   return json({ ok: true });
 };
 
@@ -27,5 +29,6 @@ export const DELETE: RequestHandler = async ({ url, locals }) => {
     throw error(400, 'Missing folder id');
   }
   const deleted = deleteFolder(userId, id);
+  if (deleted) enqueueGraphUpdate(userId, 'folder-change');
   return json({ ok: deleted });
 };

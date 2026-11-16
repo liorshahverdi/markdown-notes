@@ -168,6 +168,25 @@
 		return answer.confidence === 'high' ? answer.answer : '';
 	}
 
+	/**
+	 * Opening a cited source is the "helpful" signal for the graph loop: it credits
+	 * the graph edges that pointed at that note and records (question → note) for
+	 * the retrieval regression check. Fire-and-forget; never blocks navigation.
+	 */
+	function sendSourceFeedback(msg: Message, source: Source): void {
+		if (source.kind === 'wiki-page' || source.kind === 'raw-source' || source.kind === 'wiki') return;
+		const query = previousUserQuestion(messages.indexOf(msg));
+		const relationIds = (msg.sources ?? [])
+			.filter((item) => item.kind === 'graph-edge' && (item === source || item.noteId === source.noteId) && item.id)
+			.map((item) => item.id as string);
+		if (!source.noteId && relationIds.length === 0) return;
+		void fetch('/api/graph/feedback', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ query, noteId: source.noteId, relationIds }),
+		}).catch(() => undefined);
+	}
+
 	function previousUserQuestion(index: number): string {
 		for (let i = index - 1; i >= 0; i--) {
 			if (messages[i]?.role === 'user') return messages[i].text;
@@ -489,7 +508,7 @@
 								{#each msg.sources as source}
 									<button
 										class="inline-flex items-center rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-										onclick={() => onSourceClick(source.noteId)}
+										onclick={() => { sendSourceFeedback(msg, source); onSourceClick(source.noteId); }}
 										title="Relevance: {(source.relevanceScore * 100).toFixed(0)}%"
 									>
 										{#if source.kind}

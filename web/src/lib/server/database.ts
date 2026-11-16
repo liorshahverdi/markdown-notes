@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { mkdirSync, existsSync } from 'node:fs';
 import { getDataDir } from './dataDir';
+import { initializeGraphTables } from './graph/schema';
 
 const require = createRequire(import.meta.url);
 const BetterSqlite3 = require('better-sqlite3') as typeof import('better-sqlite3');
@@ -162,6 +163,8 @@ export function initializeDatabase(db: SqliteDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_memory_chunks_user ON memory_chunks(userId);
     CREATE INDEX IF NOT EXISTS idx_graph_relation_reviews_user ON graph_relation_reviews(userId);
   `);
+
+  initializeGraphTables(db);
 
   try {
     db.exec(`ALTER TABLE notes ADD COLUMN summary TEXT`);

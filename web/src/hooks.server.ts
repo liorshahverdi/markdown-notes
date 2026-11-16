@@ -4,6 +4,10 @@ import { findSession, findUserById } from '$lib/server/auth';
 import { getDb } from '$lib/server/database';
 import { verifyApiToken } from '$lib/server/apiTokens';
 import { getRequiredApiScope, hasApiScope } from '$lib/server/apiScopes';
+import { startGraphScheduler } from '$lib/server/graph/graphWorker';
+
+// Background knowledge-graph enrichment (hourly by default; GRAPH_ENRICH_INTERVAL_MINUTES=0 disables).
+startGraphScheduler();
 
 const PUBLIC_PATHS = ['/login', '/api/auth'];
 

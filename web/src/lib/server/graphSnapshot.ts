@@ -13,13 +13,17 @@ function normalizeName(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** Stable, name-derived entity key shared by the base graph and the enrichment overlay. */
+export function entityKeyFor(entity: { type: string; subtype?: string | null; name: string }): string {
+  const subtype = entity.subtype ? `:${normalizeName(entity.subtype)}` : '';
+  return `${entity.type.toLowerCase()}${subtype}:${normalizeName(entity.name)}`;
+}
+
 function makeEntityId(entity: ExtractedEntity, noteId: string): string {
   if (entity.type === 'note') {
     return `note:${noteId}`;
   }
-
-  const subtype = entity.subtype ? `:${normalizeName(entity.subtype)}` : '';
-  return `${entity.type.toLowerCase()}${subtype}:${normalizeName(entity.name)}`;
+  return entityKeyFor(entity);
 }
 
 function buildFolderPathIndex(folders: FolderRecord[]): Map<string, string[]> {
@@ -117,6 +121,22 @@ function relationExcerpt(content: string, fromName: string, toName: string, expl
 }
 
 export function buildGraphSnapshot(notes: NoteRecord[], folders: FolderRecord[]): GraphSnapshot {
+  const { entities, relations } = buildBaseGraph(notes, folders);
+  return {
+    entities,
+    relations,
+    clusters: detectClusters(entities, relations),
+  };
+}
+
+/**
+ * Deterministic graph derived only from current note content. Recomputed on
+ * every read, so entity source lists and provenance shrink when notes change.
+ */
+export function buildBaseGraph(
+  notes: NoteRecord[],
+  folders: FolderRecord[]
+): { entities: GraphEntity[]; relations: GraphRelation[] } {
   const folderPaths = buildFolderPathIndex(folders);
   const entityMap = new Map<string, GraphEntity>();
   const relationMap = new Map<string, GraphRelation>();
@@ -175,12 +195,10 @@ export function buildGraphSnapshot(notes: NoteRecord[], folders: FolderRecord[])
 
   const entities = Array.from(entityMap.values());
   const relations = Array.from(relationMap.values());
-
-  return {
-    entities,
-    relations,
-    clusters: detectClusters(entities, relations),
-  };
+  for (const relation of relations) {
+    relation.metadata = { ...(relation.metadata ?? {}), reviewState: 'base' };
+  }
+  return { entities, relations };
 }
 
 export function selectGraphSubsetForNotes(

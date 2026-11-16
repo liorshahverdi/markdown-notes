@@ -56,12 +56,9 @@ export function getRequiredApiScope(method: string, pathname: string): ApiScope 
 
   if (pathname === '/api/query' && normalizedMethod === 'POST') return 'query:read';
 
-  if (pathname === '/api/graph') {
+  if (pathname === '/api/graph' || pathname.startsWith('/api/graph/')) {
     if (normalizedMethod === 'GET') return 'graph:read';
-  }
-
-  if (pathname === '/api/graph/reviews') {
-    if (normalizedMethod === 'POST') return 'graph:write';
+    if (normalizedMethod === 'POST' || normalizedMethod === 'DELETE') return 'graph:write';
   }
 
   if (pathname === '/api/skills') {

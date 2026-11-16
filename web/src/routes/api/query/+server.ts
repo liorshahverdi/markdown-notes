@@ -10,6 +10,9 @@ import { buildNoteMemoryContext, type VectorMatch } from '$lib/memory/noteMemory
 import { synthesizeAnswerFromMemory } from '$lib/memory/answerSynthesizer';
 import { buildWikiFirstQueryContext } from '$lib/wiki/query/queryPipeline';
 import type { GraphRelationReviewMap } from '$lib/graph/relationReviewKey';
+import { getUserGraph } from '$lib/server/graph/graphService';
+import { recordEdgeUsage } from '$lib/server/graph/graphStore';
+import type { GraphMemorySource } from '$lib/memory/graphMemoryRetriever';
 import type { FolderRecord, NoteRecord } from '../../../types/note';
 
 const DEFAULT_TOP_K = 5;
@@ -18,6 +21,26 @@ const DEFAULT_USER_ID = 'user-1';
 const INSUFFICIENT_EVIDENCE_RESPONSE = 'I do not have enough evidence in your notes or graph to answer that directly.';
 const SEARCHING_MEMORY_STATUS = 'Searching your notes and graph…\n\n';
 const OLLAMA_REASONING_STATUS = 'I found relevant notes. Asking Laguna XS 2.1 to reason over them…\n\n';
+
+/** Materialized graph (base + enrichment overlay); falls back to the regex snapshot on failure. */
+function loadMaterializedGraph(userId: string, notes: NoteRecord[], folders: FolderRecord[]): GraphMemorySource | undefined {
+  try {
+    return getUserGraph(userId, { notes, folders });
+  } catch (err) {
+    console.warn('[query] materialized graph unavailable, using regex snapshot', err);
+    return undefined;
+  }
+}
+
+/** Usage signal: graph edges cited in an answer stay fresh; unused automatic edges decay. */
+function recordGraphUsage(userId: string, citations: Array<{ kind?: string; id?: string }>): void {
+  try {
+    const ids = citations.filter((citation) => citation.kind === 'graph-edge' && typeof citation.id === 'string').map((citation) => citation.id!);
+    if (ids.length > 0) recordEdgeUsage(getDb(), userId, ids);
+  } catch {
+    // Usage tracking must never break answering.
+  }
+}
 
 function sanitizeCitationsForClient(citations: unknown[]): unknown[] {
   return citations.map((citation) => {
@@ -82,6 +105,7 @@ function streamNoteGraphResponse(input: {
   folders: FolderRecord[];
   resolvedOllamaUrl: string;
   relationReviews?: GraphRelationReviewMap;
+  loadGraph?: () => GraphMemorySource | undefined;
   model?: string;
   signal?: AbortSignal;
 }): Response {
@@ -121,7 +145,9 @@ function streamNoteGraphResponse(input: {
               topK: DEFAULT_TOP_K,
               vectorMatches,
               relationReviews: input.relationReviews,
+              graph: input.loadGraph?.(),
             });
+            recordGraphUsage(input.userId, queryContext.citations);
             const clientCitations = sanitizeCitationsForClient(queryContext.citations);
             send({
               type: 'meta',
@@ -193,6 +219,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   const userNotes = readNotes(userId);
   const folders = readFolders(userId);
   const relationReviews = includeExperimentalWiki ? undefined : readGraphRelationReviews(getDb(), userId);
+  const loadGraph = () => (includeExperimentalWiki ? undefined : loadMaterializedGraph(userId, userNotes, folders));
 
   if (!includeExperimentalWiki && body.stream === true) {
     // In interactive chat, return the stream before any retrieval/model work so
@@ -205,10 +232,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       folders,
       resolvedOllamaUrl,
       relationReviews,
+      loadGraph,
       model,
       signal: request.signal,
     });
   }
+
+  const graph = loadGraph();
 
   if (!includeExperimentalWiki) {
     // 1. Fast exact/full-text note + graph pass for non-streaming API callers.
@@ -219,7 +249,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       topK: DEFAULT_TOP_K,
       vectorMatches: [],
       relationReviews,
+      graph,
     });
+    recordGraphUsage(userId, quickContext.citations);
     const groundedAnswer = synthesizeAnswerFromMemory({ query, citations: quickContext.citations });
     if (groundedAnswer.confidence === 'high') {
       return memoryJsonResponse({
@@ -247,6 +279,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         topK: DEFAULT_TOP_K,
         vectorMatches,
         relationReviews,
+        graph,
       });
 
   if (!includeExperimentalWiki) {

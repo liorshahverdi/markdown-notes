@@ -48,7 +48,11 @@ export function buildGraphData(
     from: relation.fromEntityId,
     to: relation.toEntityId,
     label: relation.type,
-    dashes: relation.type === 'transitive',
+    // Dashed: inferred-only edges (transitive, pending review, ephemeral suggestions).
+    dashes:
+      relation.type === 'transitive' ||
+      relation.metadata?.reviewState === 'pending' ||
+      relation.metadata?.reviewState === 'ephemeral',
     width: relation.weight ?? 1,
   }));
 

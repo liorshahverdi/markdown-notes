@@ -4,6 +4,7 @@ import { readNotes, readNote, upsertNote, deleteNote } from '$lib/server/notesFi
 import { triggerSummaryGeneration } from '$lib/server/noteSummarizer';
 import { indexNoteMemory, deleteNoteMemory } from '$lib/memory/localMemoryIndex';
 import { createHash } from 'crypto';
+import { enqueueGraphUpdate } from '$lib/server/graph/graphWorker';
 
 export const GET: RequestHandler = async ({ url, request, locals }) => {
   const userId = locals.user!.id;
@@ -80,6 +81,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     void indexNoteMemory({ userId, note: noteForIndex }).catch((err) => {
       console.warn('[Notes] Failed to update local memory index', err);
     });
+    enqueueGraphUpdate(userId, 'note-save');
     return json({ ok: true, note: savedNote });
   }
 
@@ -88,6 +90,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     for (const note of body.notes) {
       upsertNote(userId, note);
     }
+    enqueueGraphUpdate(userId, 'note-import');
     return json({ ok: true, count: body.notes.length });
   }
 
@@ -101,6 +104,9 @@ export const DELETE: RequestHandler = async ({ url, locals }) => {
     throw error(400, 'Missing note id');
   }
   const deleted = deleteNote(userId, id);
-  if (deleted) deleteNoteMemory(userId, id);
+  if (deleted) {
+    deleteNoteMemory(userId, id);
+    enqueueGraphUpdate(userId, 'note-delete');
+  }
   return json({ ok: deleted });
 };

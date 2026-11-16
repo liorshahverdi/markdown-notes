@@ -1,13 +1,13 @@
 <script lang="ts">
   import type { GraphEntity, GraphRelation, TraceRecord } from '../../types/graph';
-  import type { ImprovementRecord } from '../graph/improvementLog';
+  import type { GraphProposal } from '../graph/proposals';
   import { NODE_COLORS } from '../graph/graphBuilder';
 
   interface Props {
     entity: GraphEntity | null;
     relations: GraphRelation[];
     allEntities?: GraphEntity[];
-    improvements?: ImprovementRecord[];
+    improvements?: GraphProposal[];
     traces?: TraceRecord[];
     onOpenNote?: (noteId: string) => void;
   }
@@ -52,18 +52,14 @@
   function getRelationProvenance(rel: GraphRelation, entityId: string): ProvenanceInfo | null {
     const otherId = rel.fromEntityId === entityId ? rel.toEntityId : rel.fromEntityId;
 
-    // 1. Check improvement records where affectedIds contains both entities
-    const matchingImprovement = improvements.find(
-      (imp) =>
-        (imp.status === 'auto-applied' || imp.status === 'pending-review') &&
-        imp.affectedIds.includes(entityId) &&
-        imp.affectedIds.includes(otherId)
-    );
-    if (matchingImprovement) {
+    // 1. Enrichment proposal that created this edge (overlay or pending edges)
+    const proposalId = typeof rel.metadata?.proposalId === 'string' ? rel.metadata.proposalId : null;
+    const matchingProposal = proposalId ? improvements.find((proposal) => proposal.id === proposalId) : undefined;
+    if (matchingProposal) {
       return {
         source: 'improvement',
-        description: matchingImprovement.description,
-        confidence: matchingImprovement.confidence,
+        description: `${matchingProposal.description} [${matchingProposal.status}]`,
+        confidence: matchingProposal.confidence,
       };
     }
 

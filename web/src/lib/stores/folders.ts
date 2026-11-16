@@ -289,9 +289,7 @@ export async function moveNoteToFolder(noteId: string, folderId: string | null):
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ note: updatedNote }),
     });
-    // Re-extract knowledge graph entities with updated folder context
-    const { extractAndSaveEntities } = await import('./graph');
-    await extractAndSaveEntities(noteId, updatedNote.title, updatedNote.content, folderId);
+    // The server re-extracts the knowledge graph when the note is saved.
   }
 }
 

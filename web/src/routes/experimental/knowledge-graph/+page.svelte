@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import KnowledgeGraph from '$lib/components/KnowledgeGraph.svelte';
   import GraphControls from '$lib/components/GraphControls.svelte';
@@ -10,6 +10,7 @@
   import ScoreBreakdown from '$lib/components/ScoreBreakdown.svelte';
   import GraphHealthIndicator from '$lib/components/GraphHealthIndicator.svelte';
   import ImprovementFeed from '$lib/components/ImprovementFeed.svelte';
+  import EnrichmentStatusPanel from '$lib/components/EnrichmentStatusPanel.svelte';
   import TraceViewer from '$lib/components/TraceViewer.svelte';
   import SkillCandidateCard from '$lib/components/SkillCandidateCard.svelte';
   import SkillGeneratorPanel from '$lib/components/SkillGeneratorPanel.svelte';
@@ -28,13 +29,19 @@
     selectedNodeId,
     selectedEdgeId,
     loadGraphData,
-    extractAndSaveEntities,
-    removeRelation,
-    unmergeGraphEntities,
+    loadProposals,
+    loadEnrichmentStatus,
+    runEnrichment,
     rebuildGraph,
     acceptRelation,
     rejectRelation,
     updateRelation,
+    reviewProposalAction,
+    expandEntityNeighborhood,
+    findRelation,
+    graphProposals,
+    enrichmentStatus,
+    enrichmentRunning,
   } from '$lib/stores/graph';
   import { notes, loadNotes, selectedNoteId } from '$lib/stores/notes';
   import {
@@ -52,9 +59,7 @@
   import { computeGraphHealth, type GraphHealthMetrics } from '$lib/graph/graphScorer';
   import { detectClusters } from '$lib/skills/clusterDetector';
   import type { Cluster } from '$lib/skills/clusterDetector';
-  import { dedupeImprovements, type ImprovementRecord } from '$lib/graph/improvementLog';
-  import { createSelfImprover } from '$lib/graph/selfImprover';
-  import { db } from '$lib/db/index';
+  import type { GraphProposal } from '$lib/graph/proposals';
   import type { GraphRelation } from '../../../types/graph';
   import { buildFocusedNodeSkillCluster, buildSkillPromptFromWizardEvidence, createEdgeWizardSource } from '$lib/skills/skillWizard';
   import { generateSkillFromSelectionStream, generateSkillStream } from '$lib/skills/skillGenerator';
@@ -69,7 +74,7 @@
   );
   let selectedEdge = $derived(
     $selectedEdgeId
-      ? $graphRelations.find((r) => r.id === $selectedEdgeId) ?? null
+      ? ($graphRelations.find((r) => r.id === $selectedEdgeId) ?? findRelation($selectedEdgeId) ?? null)
       : null
   );
 
@@ -92,12 +97,13 @@
     overallScore: 0,
   });
   let clusterQualities = $state<ClusterQuality[]>([]);
-  let improvements = $state<ImprovementRecord[]>([]);
+  let improvements = $derived($graphProposals);
 
-  // Sync state
-  let syncing = $state(false);
+  // Server enrichment state
+  let syncing = $derived($enrichmentRunning);
   let rebuilding = $state(false);
-  let lastSyncedAt = $state<number | null>(null);
+  let lastSyncedAt = $derived($enrichmentStatus.runs[0]?.finishedAt ?? null);
+  let operationError = $state<string | null>(null);
 
   // UI state
   let analyticsOpen = $state(false);
@@ -124,6 +130,8 @@
   function handleNodeClick(nodeId: string) {
     $selectedNodeId = nodeId;
     $selectedEdgeId = null;
+    // Show multi-hop suggestions (dashed, not stored unless accepted).
+    void expandEntityNeighborhood(nodeId).catch(() => undefined);
   }
 
   function handleEdgeClick(edgeId: string) {
@@ -353,88 +361,37 @@
     downloadBlob(blob, 'skills-export.json');
   }
 
-  async function handleUndoImprovement(record: ImprovementRecord) {
-    // Update UI immediately
-    const updated: ImprovementRecord = { ...record, status: 'undone' };
-    improvements = improvements.map((r) => (r.id === record.id ? updated : r));
-
+  async function handleProposal(proposal: GraphProposal, action: 'accept' | 'reject' | 'undo') {
+    operationError = null;
     try {
-      if (record.type === 'relationship_added' || record.type === 'transitive_inferred' || record.type === 'implicit_extracted') {
-        const undoData = record.undoData as { relation: GraphRelation };
-        await removeRelation(undoData.relation.id);
-      } else if (record.type === 'entity_merged') {
-        const undoData = record.undoData as { keepEntity: any; removeEntity: any; originalRelations: any[] };
-        await unmergeGraphEntities(undoData);
-      }
+      await reviewProposalAction(proposal.id, action);
       recomputeAnalytics();
     } catch (e) {
-      console.warn('[SelfImprover] undo graph mutation failed:', e);
-    }
-    try {
-      await db.improvements.put(updated);
-    } catch (e) {
-      console.warn('[SelfImprover] undo DB persist failed:', e);
+      operationError = e instanceof Error ? e.message : 'Review failed';
     }
   }
 
-  let improver: ReturnType<typeof createSelfImprover> | null = null;
-
   async function handleSyncNotes() {
     if (syncing) return;
-    syncing = true;
-    let syncCompleted = false;
+    operationError = null;
     try {
-      for (const note of $notes) {
-        await extractAndSaveEntities(note.id, note.title, note.content, note.folderId);
-      }
+      const run = await runEnrichment();
+      if (run && run.status === 'failed') operationError = run.error ?? 'Enrichment pass failed';
       recomputeAnalytics();
-      lastSyncedAt = Date.now();
-      syncCompleted = true;
-    } finally {
-      // Keep the sync button tied only to deterministic extraction. Self-improvement
-      // can call Ollama and should not leave the graph operations UI disabled.
-      syncing = false;
+    } catch (e) {
+      operationError = e instanceof Error ? e.message : 'Enrichment pass failed';
     }
-
-    if (!syncCompleted) return;
-
-    // Run self-improvement analysis after sync in the background.
-    const rc = $ragConfig;
-    let siEnabled = true;
-    let siInterval = 30 * 60 * 1000;
-    let siThreshold = 0.8;
-    try {
-      const saved = localStorage.getItem('app-settings');
-      if (saved) {
-        const s = JSON.parse(saved);
-        siEnabled = s.selfImprovementEnabled ?? true;
-        siInterval = (s.selfImprovementInterval ?? 30) * 60 * 1000;
-        siThreshold = s.autoApplyThreshold ?? 0.8;
-      }
-    } catch {}
-    improver = createSelfImprover({
-      enabled: siEnabled,
-      intervalMs: siInterval,
-      autoApplyThreshold: siThreshold,
-      ollamaUrl: rc.ollamaUrl || undefined,
-      ollamaModel: rc.model || undefined,
-      onImprove(records) {
-        improvements = dedupeImprovements([...improvements, ...records]);
-        recomputeAnalytics();
-      },
-    });
-    void improver.runOnce().catch((e) => {
-      console.error('[SelfImprover] runOnce failed:', e);
-    });
   }
 
   async function handleRebuildGraph() {
     if (rebuilding || syncing) return;
     rebuilding = true;
+    operationError = null;
     try {
       await rebuildGraph();
       recomputeAnalytics();
-      lastSyncedAt = Date.now();
+    } catch (e) {
+      operationError = e instanceof Error ? e.message : 'Rebuild failed';
     } finally {
       rebuilding = false;
     }
@@ -443,8 +400,12 @@
   onMount(async () => {
     await loadNotes();
 
-    // Fast load from DB — no heavy extraction
-    await loadGraphData();
+    // The server owns the graph; fetch the materialized view plus review queue.
+    try {
+      await Promise.all([loadGraphData(), loadProposals(), loadEnrichmentStatus()]);
+    } catch (e) {
+      operationError = e instanceof Error ? e.message : 'Failed to load graph';
+    }
     await loadSkills();
     await detectSkillCandidates();
     recomputeAnalytics();
@@ -452,22 +413,6 @@
     // Load traces and prune old ones
     await pruneOldTraces();
     await loadTraces();
-
-    // Load persisted improvements (guard against old records missing fields)
-    let allImprovements: ImprovementRecord[] = [];
-    try {
-      const raw = await db.improvements.toArray();
-      allImprovements = dedupeImprovements(raw.filter((r): r is ImprovementRecord =>
-        typeof r.description === 'string' && Array.isArray(r.affectedIds)
-      ));
-    } catch {
-      // DB not ready or schema mismatch
-    }
-    improvements = allImprovements;
-  });
-
-  onDestroy(() => {
-    improver?.stop();
   });
 </script>
 
@@ -508,20 +453,24 @@
         class="kg-btn kg-btn--success"
         class:is-busy={syncing}
       >
-        {syncing ? 'Syncing…' : 'Sync notes & analyze'}
+        {syncing ? 'Analyzing…' : 'Run enrichment now'}
       </button>
       {#if lastSyncedAt}
-        <p class="kg-mono-note">last synced · {new Date(lastSyncedAt).toLocaleTimeString()}</p>
+        <p class="kg-mono-note">last pass · {new Date(lastSyncedAt).toLocaleTimeString()}</p>
       {/if}
+      <p class="kg-help-note">Runs automatically after note saves and hourly on the server.</p>
       <button
         onclick={handleRebuildGraph}
         disabled={rebuilding || syncing}
         class="kg-btn kg-btn--warning"
         class:is-busy={rebuilding}
       >
-        {rebuilding ? 'Rebuilding…' : 'Rebuild graph'}
+        {rebuilding ? 'Rebuilding…' : 'Re-process all notes'}
       </button>
-      <p class="kg-help-note">Clears entities &amp; re-extracts from scratch.</p>
+      <p class="kg-help-note">Re-runs every stage on every note. Keeps your reviews, merges and rejections.</p>
+      {#if operationError}
+        <p class="kg-help-note" style="color: #f87171">{operationError}</p>
+      {/if}
     </section>
 
     <section class="kg-section kg-section--collapsible">
@@ -595,9 +544,9 @@
           entities={$graphEntities}
           notes={$notes}
           onOpenNote={handleOpenNote}
-          onAccept={(edge) => acceptRelation(edge.id)}
-          onReject={(edge) => rejectRelation(edge.id)}
-          onEdit={(edge, patch) => updateRelation(edge.id, patch)}
+          onAccept={async (edge) => { await acceptRelation(edge.id); recomputeAnalytics(); }}
+          onReject={async (edge) => { await rejectRelation(edge.id); recomputeAnalytics(); }}
+          onEdit={async (edge, patch) => { await updateRelation(edge.id, patch); recomputeAnalytics(); }}
           onGenerateSkill={(edge) => handleGenerateFromEdge(edge)}
         />
       </section>
@@ -614,7 +563,17 @@
 
     <section class="kg-panel">
       <h3 class="kg-panel__title">Self-improvement</h3>
-      <ImprovementFeed {improvements} onUndo={handleUndoImprovement} />
+      <ImprovementFeed
+        {improvements}
+        onAccept={(proposal) => handleProposal(proposal, 'accept')}
+        onReject={(proposal) => handleProposal(proposal, 'reject')}
+        onUndo={(proposal) => handleProposal(proposal, 'undo')}
+      />
+    </section>
+
+    <section class="kg-panel">
+      <h3 class="kg-panel__title">Loop health</h3>
+      <EnrichmentStatusPanel status={$enrichmentStatus} />
     </section>
 
     <section class="kg-panel">

@@ -287,60 +287,24 @@
 						</div>
 					</div>
 				{:else if activeTab === 'self-improvement'}
-					<div class="space-y-6">
-						<label class="flex items-center gap-3">
-							<input
-								type="checkbox"
-								bind:checked={selfImprovementEnabled}
-								onchange={saveSettings}
-								class="h-4 w-4 rounded border-gray-300"
-							/>
-							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-								Enable self-improvement
-							</span>
-						</label>
-
-						{#if selfImprovementEnabled}
-							<div>
-								<label for="si-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-									Improvement interval: {selfImprovementInterval} min
-								</label>
-								<input
-									id="si-interval"
-									type="range"
-									min="10"
-									max="120"
-									step="5"
-									bind:value={selfImprovementInterval}
-									onchange={saveSettings}
-									class="mt-2 w-full"
-								/>
-								<div class="mt-1 flex justify-between text-xs text-gray-400">
-									<span>10 min</span>
-									<span>120 min</span>
-								</div>
-							</div>
-
-							<div>
-								<label for="auto-apply" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-									Auto-apply threshold: {autoApplyThreshold.toFixed(2)}
-								</label>
-								<input
-									id="auto-apply"
-									type="range"
-									min="0.5"
-									max="1.0"
-									step="0.05"
-									bind:value={autoApplyThreshold}
-									onchange={saveSettings}
-									class="mt-2 w-full"
-								/>
-								<div class="mt-1 flex justify-between text-xs text-gray-400">
-									<span>0.50</span>
-									<span>1.00</span>
-								</div>
-							</div>
-						{/if}
+					<div class="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+						<p>
+							Graph enrichment runs on the hub, not in this browser. It starts a few seconds after you save a note and
+							runs again every hour, so it works the same on every device.
+						</p>
+						<p>
+							Auto-apply thresholds are learned from your reviews: sources you approve often are applied
+							automatically, while sources you reject go to review only. If answers to your saved
+							questions get worse after a pass, its automatic changes are sent back for review.
+						</p>
+						<p>
+							Review proposals and loop health on the
+							<a href="/experimental/knowledge-graph" class="text-indigo-600 underline dark:text-indigo-400">Knowledge Graph</a> page.
+						</p>
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							Hub settings: GRAPH_ENRICH_ENABLED, GRAPH_ENRICH_INTERVAL_MINUTES, GRAPH_ENRICH_LLM,
+							GRAPH_ENRICH_LLM_NOTES_PER_PASS, GRAPH_AUTO_APPLY_THRESHOLD.
+						</p>
 					</div>
 				{:else if activeTab === 'export'}
 					<div class="space-y-4">

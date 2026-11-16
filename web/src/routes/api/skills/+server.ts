@@ -4,7 +4,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDataDir } from '$lib/server/dataDir';
 import { readFolders, readNotes } from '$lib/server/notesFile';
-import { buildGraphSnapshot, selectGraphSubsetForNotes } from '$lib/server/graphSnapshot';
+import { selectGraphSubsetForNotes } from '$lib/server/graphSnapshot';
+import { getUserGraph } from '$lib/server/graph/graphService';
 import { queryLlamaCpp } from '$lib/server/llamaCpp';
 import { buildSkillPrompt } from '$lib/skills/skillGenerator';
 
@@ -47,7 +48,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     throw error(404, 'No matching notes found for the provided noteIds');
   }
 
-  const snapshot = buildGraphSnapshot(allNotes, readFolders(locals.user!.id));
+  const snapshot = getUserGraph(locals.user!.id, { notes: allNotes, folders: readFolders(locals.user!.id) });
   const subset = selectGraphSubsetForNotes(snapshot, noteIds);
 
   const cluster = {

@@ -295,52 +295,48 @@ Edges between nodes represent relationships found in your notes. The relationshi
 		title: 'Graph Self-Improvement',
 		content: `## Graph Self-Improvement
 
-The knowledge graph can autonomously learn and improve over time by analyzing your notes for new entities and relationships.
+The knowledge graph improves itself on the hub (the server), not in your browser. Its output feeds the chat answers directly.
 
-### How Autonomous Learning Works
+### How it works
 
-The self-improvement loop runs five analysis stages:
+- **Base graph**: Rebuilt from your current notes every time it is read: headings, tags, links, diagrams and folders. When you edit or delete a note, its entities and edges go away too.
+- **Enrichment layer**: Everything the loop adds is stored on top of the base graph as a proposal with its source note and excerpt. Each change can be undone on its own.
 
-1. **Relationship discovery**: Finds entities that co-occur in 2+ notes but have no direct link, and proposes a relationship
-2. **Entity deduplication**: Detects near-duplicate entities (e.g., "Dr. Smith" and "Smith") and proposes merging them
-3. **Entity validation** (requires Laguna / llama.cpp): Uses the LLM to verify that extracted entity types are correct (e.g., "AMS" classified as Organization, not Topic)
-4. **Implicit extraction** (requires Laguna / llama.cpp): Uses the LLM to discover relationships that aren't explicitly stated but are implied in the text
-5. **Auto-apply / evidence review**: High-confidence proposals (above the threshold) are applied automatically; lower-confidence relationship evidence can be inspected and accepted/rejected from the edge detail drawer
+Each pass runs these stages:
 
-### Background Loop
+1. **Co-occurrence links**: Entities that appear together more often than chance (normalized PMI). Tags and folders that appear everywhere are ignored.
+2. **Duplicates**: Same-type entities with near-identical names. Notes and folders are never merged, and names that differ in their numbers (dates, versions) are never matched. A merge is applied automatically only if Laguna confirms it.
+3. **Hidden relationships** (Laguna): The model only sees entities from the note, must use their exact names, and must quote the note as evidence. Edges whose quote is not found in the note always go to review.
+4. **Type checks and missed entities** (Laguna): Type corrections always go to review. Missed entities must appear word for word in the note.
 
-When enabled in Settings, self-improvement runs automatically **every hour** in the background. On app startup, it checks whether a run happened in the past hour and skips if so — this prevents duplicate runs after a page refresh or server restart. You can also trigger a run manually by clicking **Sync Notes** on the Knowledge Graph page.
+Recently changed notes are processed first. Every note is marked done even when nothing is found, so the queue keeps moving. A note is processed again when you edit it.
 
-### Reasoning Traces
+### When it runs
 
-Every self-improvement run (as well as chat queries and entity extractions) produces a **reasoning trace** visible in the "Reasoning Traces" panel on the Knowledge Graph page. Traces explain **why** each decision was made:
+- A few seconds after you save, move or delete a note
+- Every hour
+- When you click **Run enrichment now** on the Knowledge Graph page
 
-- Why a relationship was proposed (which notes the entities co-occur in, confidence score)
-- Why an entity merge was suggested (name similarity percentage, the reason)
-- Why an entity type correction was proposed (LLM reasoning against note content)
-- Why a candidate was rejected (below threshold, already proposed, duplicate)
+If Laguna is not loaded, the model stages are skipped; the loop never loads it.
 
-Click a trace to expand its stages, then click a stage to see individual decisions.
+### Reviewing
+
+The **Self-improvement** panel lists proposals waiting for review, with **Approve**/**Reject**. Applied items have **Confirm**/**Undo**. Edges can also be accepted, rejected or retyped from the edge evidence drawer. Rejected and undone proposals are never proposed again, even after **Re-process all notes**.
+
+### Learning from feedback
+
+- **Thresholds**: Auto-apply thresholds are learned for each source from your reviews. Sources you mostly reject switch to review only, and sources you reliably accept are applied more readily.
+- **Answer feedback**: When you open a source cited in a chat answer, the graph edges behind it get credit, and the question is saved for the retrieval check. Automatic edges that are never used lose weight after 30 days.
+- **Retrieval check**: Each pass compares how well the saved questions find their notes before and after its changes. If the answers get worse, that pass's automatic changes go back to review.
+- **Loop health**: This panel shows precision, provenance coverage, wrong-merge rate, duplicate rate and the last pass.
+
+### Multi-hop suggestions
+
+Click a node to see dashed multi-hop suggestions. They are built only from explicit or accepted edges and are not saved unless you accept them.
 
 ### Edge Evidence Review
 
-Select a relationship edge in the Knowledge Graph to open its evidence drawer. For each edge, you can:
-
-- **Accept**: Mark the relationship as reviewed and trusted
-- **Reject**: Hide the relationship from the normal graph view
-- **Edit**: Adjust the relationship type
-- **Generate skill**: Draft a skill from the edge's cited source notes and provenance
-
-### Undo Changes
-
-If an approved change turns out to be incorrect, you can undo supported self-improvement records from the graph detail panel, or reject an incorrect relationship edge from the edge evidence drawer.
-
-### Configuration
-
-In Settings > Self-Improvement:
-
-- **Enable/disable**: Toggle the background self-improvement loop
-- **Auto-apply threshold**: Confidence level above which proposals are applied automatically (0.5 - 1.0). Higher values mean more conservative auto-application.`,
+Select an edge to open its evidence drawer, where you can accept, reject or retype it, or generate a skill from its source notes.`,
 		keywords: ['self-improvement', 'autonomous', 'learning', 'review', 'queue', 'approve', 'reject', 'undo', 'interval', 'scan', 'trace', 'reasoning', 'background', 'hourly']
 	},
 	{
