@@ -1,66 +1,31 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { queryOllama, type ChatMessage } from './ragPipeline';
+import { queryOllama, type RAGConfig } from './ragPipeline';
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-function streamFromChunks(chunks: string[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-      controller.close();
-    },
-  });
+afterEach(() => vi.unstubAllGlobals());
+const config: RAGConfig = { ollamaUrl: 'http://stale.invalid:11434', model: 'stale-ollama-model', topK: 5 };
+function response(chunks: string[]) {
+  return new Response(new ReadableStream({ start(c) { const e = new TextEncoder(); for (const s of chunks) c.enqueue(e.encode(s)); c.close(); } }));
 }
+async function consume() { let result = ''; for await (const token of queryOllama('Answer', config)) result += token; return result; }
 
-describe('queryOllama streaming parser', () => {
-  it('buffers partial JSON lines so streamed chat tokens are not dropped', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(streamFromChunks([
-      '{"message":{"content":"Based"},"done":false}\n{"message"',
-      ':{"content":" on"},"done":false}\n',
-      '{"message":{"content":" the notes"},"done":false}\n{"done":true}\n',
-    ]), { status: 200 })));
-
-    const messages: ChatMessage[] = [{ role: 'user', content: 'What risks should I watch?' }];
-    const tokens: string[] = [];
-    for await (const token of queryOllama(messages, { ollamaUrl: 'http://localhost:11434', model: 'llama3.2:3b', topK: 5 })) {
-      tokens.push(token);
-    }
-
-    expect(tokens.join('')).toBe('Based on the notes');
+describe('client llama.cpp hub stream', () => {
+  it('buffers split SSE tokens', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(['data: {"token":"Based', ' on"}\n\ndata: {"token":" notes"}\n\ndata: [DONE]\n\n'])));
+    expect(await consume()).toBe('Based on notes');
   });
-
-  it('sends deterministic low-latency Ollama options for stable chat answers', async () => {
-    const fetchMock = vi.fn(async () => new Response(streamFromChunks([
-      '{"message":{"content":"ok"},"done":false}\n{"done":true}\n',
-    ]), { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const messages: ChatMessage[] = [{ role: 'user', content: 'Answer quickly' }];
-    for await (const _token of queryOllama(messages, { ollamaUrl: 'http://localhost:11434', model: 'llama3.2:3b', topK: 5 })) {
-      // consume stream
-    }
-
-    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
-    const [, init] = calls[0];
-    const body = JSON.parse(String(init.body));
-    expect(body.options).toMatchObject({ temperature: 0, num_predict: 512, num_ctx: 8192 });
-    expect(body.keep_alive).toBe('10m');
+  it('ignores stale browser URL/model and only calls the same-origin hub', async () => {
+    const f = vi.fn().mockResolvedValue(response(['data: {"token":"ok"}\n\ndata: [DONE]\n\n'])); vi.stubGlobal('fetch', f);
+    expect(await consume()).toBe('ok');
+    expect(f.mock.calls[0][0]).toBe('/api/llm/chat');
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ prompt: 'Answer' });
+    expect(f.mock.calls[0][1].signal.aborted).toBe(true);
   });
-
-  it('parses a final buffered Ollama JSON line even when it has no trailing newline', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(streamFromChunks([
-      '{"message":{"content":"Final answer"},"done":false}',
-    ]), { status: 200 })));
-
-    const messages: ChatMessage[] = [{ role: 'user', content: 'Answer' }];
-    const tokens: string[] = [];
-    for await (const token of queryOllama(messages, { ollamaUrl: 'http://localhost:11434', model: 'llama3.2:3b', topK: 5 })) {
-      tokens.push(token);
-    }
-
-    expect(tokens.join('')).toBe('Final answer');
+  it('parses a final token without trailing newline', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(['data: {"token":"Final answer"}'])));
+    expect(await consume()).toBe('Final answer');
+  });
+  it('surfaces backend errors instead of silently swallowing them', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(['data: {"error":"Backend unavailable"}\n\n'])));
+    await expect(consume()).rejects.toThrow('Backend unavailable');
   });
 });

@@ -41,11 +41,14 @@ describe('extractionPipeline', () => {
     expect(regexStage!.entityCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('runs NER stage', async () => {
+  it('does not run neural extraction by default', async () => {
     const result = await runExtractionPipeline('note-1', 'Test', 'Content');
+    expect(result.stages.map(stage => stage.name)).toEqual(['regex']);
+  });
 
-    const nerStage = result.stages.find((s) => s.name === 'ner');
-    expect(nerStage).toBeDefined();
+  it('runs NER only when explicitly enabled', async () => {
+    const result = await runExtractionPipeline('note-1', 'Test', 'Content', undefined, { enableNER: true });
+    expect(result.stages.find(stage => stage.name === 'ner')).toBeDefined();
   });
 
   it('respects config flags to disable stages', async () => {

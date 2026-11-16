@@ -16,6 +16,16 @@ afterEach(() => {
 });
 
 describe('local memory index', () => {
+  it('preserves historical vectors and skips inference by default', async () => {
+    const db = new Database(':memory:'); dbs.push(db); initializeDatabase(db);
+    const { indexNoteMemory, searchLocalMemory } = await loadIndexWithDb(db);
+    const note = { id: 'old', title: 'Preserved', content: 'Historical evidence', dateModified: 1, isPinned: false };
+    await indexNoteMemory({ userId: 'u1', note, embedTexts: async texts => texts.map(() => [1, 0]) });
+    const before = db.prepare('SELECT * FROM memory_chunks').all();
+    expect(await indexNoteMemory({ userId: 'u1', note: { ...note, content: 'Edited content' } })).toEqual({ indexedChunks: 0, skipped: true });
+    expect(await searchLocalMemory({ userId: 'u1', query: 'evidence' })).toEqual([]);
+    expect(db.prepare('SELECT * FROM memory_chunks').all()).toEqual(before);
+  });
   it('persists note chunks and reuses them for semantic search', async () => {
     const db = new Database(':memory:');
     dbs.push(db);

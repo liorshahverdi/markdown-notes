@@ -7,8 +7,8 @@ export interface RAGResult {
 }
 
 export interface RAGConfig {
-  ollamaUrl: string;         // default 'http://localhost:11434'
-  model: string;              // default 'qwen2.5:3b'
+  ollamaUrl: string;          // Legacy field, ignored by server-side llama.cpp configuration
+  model: string;              // Display hint; the hub owns model selection
   topK: number;               // default 5
   embeddingModel?: string;    // default 'nomic-embed-text'
 }
@@ -349,121 +349,21 @@ export function buildRAGPrompt(
   return msgs.map(m => m.role === 'system' ? m.content : `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n');
 }
 
-/** Default timeout for the initial fetch (waiting for model load + first byte). */
-const FETCH_TIMEOUT_MS = 30_000;
-/** Default timeout between successive stream reads (stall detection). */
-const READ_TIMEOUT_MS = 30_000;
-
+/** Legacy public name retained for graph/skill callers; always uses the hub proxy. */
 export async function* queryOllama(
   messagesOrPrompt: ChatMessage[] | string,
   config: RAGConfig,
   signal?: AbortSignal,
-  fetchTimeoutMs: number = FETCH_TIMEOUT_MS,
-  readTimeoutMs: number = READ_TIMEOUT_MS
+  _fetchTimeoutMs?: number,
+  _readTimeoutMs?: number
 ): AsyncGenerator<string> {
-  // Use a manual AbortController so we can clear the fetch timeout once
-  // the connection is established. AbortSignal.timeout would kill the entire
-  // stream (including body reads) when it fires, even if tokens are flowing.
-  const controller = new AbortController();
-  const fetchTimer = setTimeout(() => controller.abort(new Error(`Ollama fetch timed out after ${fetchTimeoutMs / 1000} s`)), fetchTimeoutMs);
-  // If the caller's signal fires, propagate to our controller.
-  signal?.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
-
-  // Support both messages array (new) and string prompt (legacy)
-  const isMessages = Array.isArray(messagesOrPrompt);
-  const endpoint = isMessages ? '/api/chat' : '/api/generate';
-  const options = {
-    temperature: 0,
-    num_predict: 512,
-    num_ctx: 8192,
-  };
-  const body = isMessages
-    ? { model: config.model, messages: messagesOrPrompt, stream: true, keep_alive: '10m', options }
-    : { model: config.model, prompt: messagesOrPrompt, stream: true, keep_alive: '10m', options };
-
-  const response = await fetch(`${config.ollamaUrl}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  });
-
-  // Connection established — clear the fetch timeout so it doesn't kill the stream.
-  clearTimeout(fetchTimer);
-
-  if (!response.ok || !response.body) {
-    let detail = '';
-    try { detail = await response.text(); } catch { /* ignore */ }
-    throw new Error(`Ollama request failed: ${response.status}${detail ? ` — ${detail.slice(0, 200)}` : ''}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  async function readWithTimeout() {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let abortHandler: (() => void) | undefined;
-    try {
-      return await Promise.race([
-        reader.read(),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error(`Ollama stream stalled — no data received for ${readTimeoutMs / 1000} s`)), readTimeoutMs);
-          abortHandler = () => reject(signal?.reason ?? new Error('Ollama request aborted'));
-          signal?.addEventListener('abort', abortHandler, { once: true });
-        }),
-      ]);
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-      if (abortHandler) signal?.removeEventListener('abort', abortHandler);
-    }
-  }
-
-  function parseLine(line: string): { token: string; done: boolean } | null {
-    if (!line.trim()) return null;
-    try {
-      const parsed = JSON.parse(line);
-      return {
-        token: parsed.message?.content ?? parsed.response ?? '',
-        done: parsed.done === true,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  while (true) {
-    // Per-read timeout: if no data arrives within READ_TIMEOUT_MS the stream
-    // is considered stalled and we abort rather than hanging forever.
-    const { done, value } = await readWithTimeout();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      const parsed = parseLine(line);
-      if (!parsed) continue;
-      if (parsed.token) yield parsed.token;
-      if (parsed.done) return;
-    }
-  }
-
-  buffer += decoder.decode();
-  const parsed = parseLine(buffer);
-  if (parsed?.token) yield parsed.token;
+  const { proxyQueryOllama } = await import('../llm/ollamaProxy');
+  yield* proxyQueryOllama(messagesOrPrompt, config, signal);
 }
 
-export async function checkOllamaHealth(url: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${url}/api/tags`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+export async function checkOllamaHealth(_url?: string): Promise<boolean> {
+  const { proxyCheckHealth } = await import('../llm/ollamaProxy');
+  return proxyCheckHealth();
 }
 
 export async function ragQuery(
@@ -524,7 +424,7 @@ export async function ragQuery(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return {
-      response: `Error querying Ollama: ${message}`,
+      response: `Error querying llama.cpp: ${message}`,
       sourceNotes,
       isStreaming: false,
     };

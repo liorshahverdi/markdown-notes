@@ -14,6 +14,13 @@ describe('api scope policy', () => {
     expect(getRequiredApiScope('POST', '/api/graph/reviews')).toBe('graph:write');
   });
 
+  it('protects llama.cpp proxies and legacy aliases with query scope', () => {
+    expect(getRequiredApiScope('GET', '/api/llm/health')).toBe('query:read');
+    expect(getRequiredApiScope('POST', '/api/llm/chat')).toBe('query:read');
+    expect(getRequiredApiScope('POST', '/api/llm/json')).toBe('query:read');
+    expect(getRequiredApiScope('POST', '/api/ollama/chat')).toBe('query:read');
+  });
+
   it('allows session auth and checks token scopes explicitly', () => {
     expect(hasApiScope(undefined, 'notes:write')).toBe(true);
     expect(hasApiScope({ type: 'session' }, 'notes:write')).toBe(true);

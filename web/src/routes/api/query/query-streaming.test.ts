@@ -10,14 +10,15 @@ describe('/api/query streaming mode', () => {
     expect(server).toContain('body.stream === true');
     expect(server).toContain('return streamNoteGraphResponse({');
     expect(server).toContain('signal: request.signal');
-    expect(server).toContain('searchLocalMemory');
+    expect(server).not.toContain('searchLocalMemory');
+    expect(server).toContain("from '$lib/server/llamaCpp'");
     expect(server).not.toContain('!includeExperimentalWiki && body.stream !== true');
     expect(server).toContain('new ReadableStream');
     expect(server).toContain('sanitizeCitationsForClient');
     expect(server).toContain('Searching your notes and graph');
-    expect(server).toContain('I found relevant notes. Asking Ollama to reason over them');
+    expect(server).toContain('I found relevant notes. Asking Laguna XS 2.1 to reason over them');
     expect(server).toContain('synthesizeAnswerFromMemory');
-    expect(server).toContain('queryOllama(queryContext.messages, config, input.signal)');
+    expect(server).toContain('queryOllama(queryContext.messages, config, signal)');
     expect(panel).toContain('buildClientFastRecall');
     expect(panel).toContain("text: instantRecall,");
     expect(panel).toContain('Still waiting for the chat stream to start');

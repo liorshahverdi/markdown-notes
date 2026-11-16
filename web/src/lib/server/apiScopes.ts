@@ -86,7 +86,7 @@ export function getRequiredApiScope(method: string, pathname: string): ApiScope 
     if (normalizedMethod === 'POST' || normalizedMethod === 'DELETE') return 'notes:write';
   }
 
-  if (pathname.startsWith('/api/ollama/')) return 'query:read';
+  if (pathname.startsWith('/api/llm/') || pathname.startsWith('/api/ollama/')) return 'query:read';
 
   return null;
 }

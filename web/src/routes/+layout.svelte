@@ -3,10 +3,9 @@
 	import '../app.css';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
 	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
-	import { ollamaStatus, ragConfig } from '$lib/stores/rag';
+	import { ollamaStatus } from '$lib/stores/rag';
 	import { chatOpen } from '$lib/stores/chat';
 	import { currentUser, logout } from '$lib/stores/user';
-	import { proxyCheckHealth } from '$lib/llm/ollamaProxy';
 	import { createWakeWordDetector } from '$lib/voice/wakeWordDetector';
 	import { loadVoicePreferences } from '$lib/voice/voicePreferences';
 	import { experimentalNavItems, primaryNavItems } from '$lib/navigation/navItems';
@@ -26,11 +25,83 @@
 		}
 	});
 
+	type LeaseInfo = { phase: string; error?: string; managed?: boolean };
+	type LeasePeer = { key: string; activity: string; leased: boolean; owners: number };
+	let lease = $state<LeaseInfo>({ phase: 'none' });
+	let leasePoll: ReturnType<typeof setTimeout> | undefined;
+	let leaseBusy = $derived(lease.phase === 'acquiring' || lease.phase === 'releasing');
+	let leaseTitle = $derived(
+		leaseBusy
+			? lease.phase === 'releasing' ? 'Releasing Laguna lease…' : 'Starting Laguna and acquiring lease…'
+			: lease.phase === 'error'
+				? `Lease error: ${lease.error ?? 'unknown'} — click to retry`
+				: lease.phase === 'held'
+					? 'App holds a Laguna lease — click to restart it cleanly'
+					: 'Start Laguna on the fleet and lease it to this app'
+	);
+
 	async function checkHealth() {
-		const config = get(ragConfig);
+		if (get(ollamaStatus) !== 'connected') ollamaStatus.set('checking');
+		try {
+			// Only visible tabs count as activity that keeps the hub lease renewed.
+			const active = document.visibilityState === 'visible' ? '?active=1' : '';
+			const response = await fetch(`/api/llm/health${active}`, { signal: AbortSignal.timeout(5000) });
+			const body = response.ok ? await response.json() : null;
+			ollamaStatus.set(body?.ok === true ? 'connected' : 'disconnected');
+			if (body?.lease) lease = body.lease;
+			if (leaseBusy) pollLease();
+		} catch {
+			ollamaStatus.set('disconnected');
+		}
+	}
+
+	function pollLease() {
+		clearTimeout(leasePoll);
+		leasePoll = setTimeout(async () => {
+			try {
+				const response = await fetch('/api/llm/lease');
+				if (response.ok) lease = (await response.json()).lease;
+			} catch {}
+			if (leaseBusy) pollLease();
+			else checkHealth();
+		}, 2000);
+	}
+
+	async function restartLease(allowEvict = false) {
+		if (leaseBusy) return;
+		lease = { phase: 'acquiring' };
+		let response: Response;
+		let body: any = {};
+		try {
+			response = await fetch('/api/llm/lease', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'restart', allowEvict })
+			});
+			body = await response.json().catch(() => ({}));
+		} catch {
+			lease = { phase: 'error', error: 'Hub unreachable' };
+			return;
+		}
+		if (response.status === 409 && body.needsConfirm) {
+			lease = body.lease ?? { phase: 'none' };
+			const peers: LeasePeer[] = body.peers ?? [];
+			const inUse = peers.filter((p) => p.leased);
+			if (inUse.length) {
+				alert(`Laguna can't start: ${inUse.map((p) => p.key).join(', ')} is leased by another session. Close that session first.`);
+				return;
+			}
+			const list = peers.map((p) => `• ${p.key} (${p.activity})`).join('\n');
+			if (confirm(`Starting Laguna stops the other resident fleet model:\n${list}\n\nContinue?`)) return restartLease(true);
+			return;
+		}
+		if (!response.ok) {
+			lease = { phase: 'error', error: body.message || `Lease request failed (${response.status})` };
+			return;
+		}
+		lease = body.lease;
 		ollamaStatus.set('checking');
-		const ok = await proxyCheckHealth(config.ollamaUrl);
-		ollamaStatus.set(ok ? 'connected' : 'disconnected');
+		pollLease();
 	}
 
 	/** Read persisted theme from localStorage and apply immediately. */
@@ -89,6 +160,7 @@
 
 	onDestroy(() => {
 		if (healthInterval) clearInterval(healthInterval);
+		clearTimeout(leasePoll);
 		wakeWordDetector?.stop();
 	});
 
@@ -117,7 +189,9 @@
 	);
 
 	let ollamaStatusLabel = $derived(
-		$ollamaStatus === 'connected' ? 'online' : $ollamaStatus === 'checking' ? 'checking' : 'offline'
+		leaseBusy
+			? 'starting'
+			: $ollamaStatus === 'connected' ? 'online' : $ollamaStatus === 'checking' ? 'checking' : 'offline'
 	);
 
 	let isLoginPage = $derived($page.url.pathname === '/login');
@@ -172,10 +246,25 @@
 					{/each}
 				</div>
 
-				<!-- Ollama status pill -->
-				<div class="status-pill" title="Ollama: {$ollamaStatus}">
+				<!-- Hub-owned llama.cpp status -->
+				<div class="status-pill" title="Laguna XS 2.1 via llama.cpp: {$ollamaStatus}">
 					<span class="status-dot {ollamaStatusClass}"></span>
-					<span class="label-meta">ollama · {ollamaStatusLabel}</span>
+					<span class="label-meta">Laguna XS · {ollamaStatusLabel}</span>
+					<button
+						type="button"
+						class="lease-button"
+						class:is-busy={leaseBusy}
+						class:is-error={lease.phase === 'error'}
+						onclick={() => restartLease()}
+						disabled={leaseBusy}
+						title={leaseTitle}
+						aria-label={leaseTitle}
+					>
+						<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+							<path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+							<path d="M13.6 2.2v3.2h-3.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+						</svg>
+					</button>
 				</div>
 
 				{#if $currentUser}
@@ -378,6 +467,42 @@
 		border-radius: 999px;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border-subtle);
+	}
+
+	.lease-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		margin-right: -4px;
+		padding: 0;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+	}
+
+	.lease-button:hover:not(:disabled) {
+		color: var(--color-text);
+		background: var(--color-bg);
+	}
+
+	.lease-button.is-error {
+		color: var(--color-danger);
+	}
+
+	.lease-button.is-busy {
+		cursor: progress;
+	}
+
+	.lease-button.is-busy svg {
+		animation: lease-spin 1s linear infinite;
+	}
+
+	@keyframes lease-spin {
+		to { transform: rotate(360deg); }
 	}
 
 	.user-chip {

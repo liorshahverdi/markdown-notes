@@ -8,8 +8,9 @@ export const ragError = writable<string | null>(null);
 export const ollamaStatus = writable<'connected' | 'disconnected' | 'checking'>('checking');
 
 export const ragConfig = writable<RAGConfig>({
-  ollamaUrl: 'http://localhost:11434',
-  model: 'qwen2.5:3b',
+  // Compatibility fields only; backend configuration is server-owned.
+  ollamaUrl: '',
+  model: 'laguna-xs-2.1-q4_k_m',
   topK: 3,
-  embeddingModel: 'nomic-embed-text',
+  embeddingModel: '',
 });

@@ -181,7 +181,7 @@ The **microphone button** in the top navigation bar provides quick voice input (
 
 ### Voice Chat (Chat Panel)
 
-The Chat panel includes a **mic button** next to the text input. Click it to speak a question — the transcribed text is automatically submitted as a query to Ollama, just as if you had typed it.
+The Chat panel includes a **mic button** next to the text input. Click it to speak a question — the transcribed text is automatically submitted to the notes/graph chat backed by Laguna through llama.cpp, just as if you had typed it.
 
 1. Open the Chat panel by clicking the **chat icon** (speech bubble) in the nav bar
 2. Click the mic button in the Chat panel's input bar
@@ -226,28 +226,21 @@ The Chat panel is the primary way to ask questions about your notes:
 
 ### Referencing Notes by Title
 
-You can ask about a specific note by including its title in your query (e.g., "summarize AMS standup transcript 4/6/2026"). The system detects title matches and uses that note as context, even if vector search hasn't indexed it yet. You can also use words like "this note" or "the current note" to refer to the currently selected note.
+You can ask about a specific note by including its title in your query (e.g., "summarize AMS standup transcript 4/6/2026"). The system detects title matches and uses that note as context without requiring an embedding index. You can also use words like "this note" or "the current note" to refer to the currently selected note.
 
-### Ollama Setup
+### llama.cpp Backend
 
-RAG requires an Ollama instance for the language model. Ollama runs on the **server** — all AI requests are proxied through the app server, so you can access the app from any device on your network without needing Ollama installed locally on each device.
+Generative features use **Laguna XS 2.1 through llama.cpp on the hub**. The hub owns its backend address, model and API credentials. No Ollama service or fallback is used.
 
-1. Install Ollama on the **server** from [ollama.ai](https://ollama.ai)
-2. Pull a model: \`ollama pull qwen2.5:3b\` (or another supported model)
-3. Start Ollama: \`ollama serve\` (runs on port 11434 by default)
-4. The green/red status dot in the nav bar shows whether Ollama is connected
+The status pill shows whether the configured Laguna model is available. Switching the shared fleet away from Laguna makes these features unavailable until Laguna is restored; the app does not start, stop or evict fleet models.
 
 ### Remote Access
 
-The app proxies all Ollama calls through the server (\`/api/ollama/*\` endpoints). This means:
+Health checks, streaming chat and structured extraction use same-origin \`/api/llm/*\` endpoints. Phones and other computers only need access to the hub URL, not an inference service on their own device. Backend credentials never go to the browser.
 
-- **Health checks**, **streaming chat**, and **JSON extraction** all go through the server
-- You can access the app from any device on your network (phone, tablet, another computer) and chat works without Ollama running on that device
-- The Ollama URL in settings refers to where the **server** can reach Ollama (usually \`http://localhost:11434\`)
+### Retrieval
 
-### Model Selection
-
-In Settings, you can choose which Ollama model to use. Smaller models (e.g., \`qwen2.5:3b\` or \`llama3.2:3b\`) are faster but less capable. Larger models provide better quality but require more resources.
+Notes are retrieved by title/keyword matches and knowledge-graph evidence. Embedding inference is disabled; existing stored vectors are retained but not queried. Laguna receives the retrieved note context to answer questions.
 
 ### Asking Good Questions
 
@@ -310,8 +303,8 @@ The self-improvement loop runs five analysis stages:
 
 1. **Relationship discovery**: Finds entities that co-occur in 2+ notes but have no direct link, and proposes a relationship
 2. **Entity deduplication**: Detects near-duplicate entities (e.g., "Dr. Smith" and "Smith") and proposes merging them
-3. **Entity validation** (requires Ollama): Uses the LLM to verify that extracted entity types are correct (e.g., "AMS" classified as Organization, not Topic)
-4. **Implicit extraction** (requires Ollama): Uses the LLM to discover relationships that aren't explicitly stated but are implied in the text
+3. **Entity validation** (requires Laguna / llama.cpp): Uses the LLM to verify that extracted entity types are correct (e.g., "AMS" classified as Organization, not Topic)
+4. **Implicit extraction** (requires Laguna / llama.cpp): Uses the LLM to discover relationships that aren't explicitly stated but are implied in the text
 5. **Auto-apply / evidence review**: High-confidence proposals (above the threshold) are applied automatically; lower-confidence relationship evidence can be inspected and accepted/rejected from the edge detail drawer
 
 ### Background Loop
@@ -441,7 +434,7 @@ mdnotes create "My New Note" --file ./draft.md
 #### Query (RAG)
 \`\`\`bash
 mdnotes query "What do I know about React?"
-mdnotes query "Summarize my project notes" --model qwen2.5:3b
+mdnotes query "Summarize my project notes"
 \`\`\`
 
 #### Export
@@ -475,10 +468,10 @@ All configurable options for MarkdownNotes.
 - **Speech rate / pitch**: Adjust text-to-speech playback speed and pitch
 
 ### RAG / AI
-- **Ollama URL**: Where the server can reach Ollama (default: \`http://localhost:11434\`). All requests are proxied through the server, so this should be the address from the server's perspective.
-- **Model**: Which Ollama model to use for RAG queries and self-improvement
+- **Backend**: Laguna XS 2.1 via llama.cpp, configured on the hub server
+- **Retrieval**: Keywords and knowledge graph; embedding inference is disabled
 - **Top-K results**: Number of note passages to include in RAG context (1-20)
-- **Status indicator**: Shows whether Ollama is reachable (green = connected, red = disconnected)
+- **Status indicator**: Shows whether the configured Laguna model is available through llama.cpp (green = connected, red = disconnected)
 
 ### Self-Improvement
 - **Enable self-improvement**: Toggle the hourly background self-improvement loop. When enabled, the system analyzes your knowledge graph every hour for new relationships, duplicates, and LLM-powered improvements.
@@ -490,19 +483,17 @@ All configurable options for MarkdownNotes.
 		title: 'Troubleshooting',
 		content: `## Troubleshooting
 
-### Ollama Not Running
+### Laguna / llama.cpp Offline
 
-**Symptom**: Chat panel queries fail or return errors about connection refused. The status dot in the nav bar shows red.
+**Symptom**: Generative queries fail or the Laguna status pill shows offline.
 
 **Solution**:
-1. Verify Ollama is installed **on the server**: \`ollama --version\`
-2. Start the server: \`ollama serve\`
-3. Check it is running: \`curl http://localhost:11434/api/tags\`
-4. Ensure the model is downloaded: \`ollama list\`
-5. If the port is different, update the Ollama URL in Settings > RAG
-6. The nav bar status dot should turn green when Ollama is connected
+1. Check the local fleet status on the hub. Laguna XS must be healthy on its configured endpoint.
+2. Verify the hub service has LLAMACPP_BASE_URL, LLAMACPP_MODEL and the private LLAMACPP_API_KEY configured.
+3. Click the restart button next to the Laguna status pill. The hub releases any lease it holds, starts Laguna on the fleet if needed and holds a lease while a visible tab is open (released after 20 idle minutes). If another resident model would be stopped you are asked first; models leased by another Pi session are never evicted. The app never evicts models automatically.
+4. If Laguna is busy, another app or Pi session may be using its single inference slot. Retry after that request finishes.
 
-**Note**: Ollama only needs to run on the machine hosting the app. All AI requests are proxied through the app server, so remote clients (phones, tablets, other computers) do not need Ollama installed.
+Keyword/graph retrieval does not need an inference backend. Remote clients never need to install a model service.
 
 ### Voice Not Working in Firefox
 
@@ -517,7 +508,7 @@ All configurable options for MarkdownNotes.
 
 - **Large note collections**: If the app feels slow with many notes, try closing unused browser tabs to free memory
 - **Knowledge graph**: Large graphs (500+ nodes) may benefit from disabling physics simulation in the graph controls
-- **Embeddings**: Initial embedding generation runs in a Web Worker and may take a moment for large note collections. Subsequent updates are incremental.
+- **Retrieval**: Keyword/graph search does not load an embedding model or run background embedding jobs.
 - **Mermaid diagrams**: Complex diagrams may slow the preview. Consider simplifying or splitting into multiple diagrams.
 
 ### Data Persistence

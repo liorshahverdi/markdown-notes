@@ -95,10 +95,10 @@ describe('checkOllamaHealth', () => {
   });
 
   it('should return true when Ollama is reachable', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ ok: true })));
     const result = await checkOllamaHealth('http://localhost:11434');
     expect(result).toBe(true);
-    expect(fetch).toHaveBeenCalledWith('http://localhost:11434/api/tags', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(fetch).toHaveBeenCalledWith('/api/llm/health', expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it('should return false when Ollama is unreachable', async () => {
@@ -141,11 +141,11 @@ describe('ragQuery', () => {
           read: vi.fn()
             .mockResolvedValueOnce({
               done: false,
-              value: new TextEncoder().encode(JSON.stringify({ response: 'TDD is great' }) + '\n'),
+              value: new TextEncoder().encode('data: ' + JSON.stringify({ token: 'TDD is great' }) + '\n\n'),
             })
             .mockResolvedValueOnce({
               done: false,
-              value: new TextEncoder().encode(JSON.stringify({ response: '', done: true }) + '\n'),
+              value: new TextEncoder().encode('data: [DONE]\n\n'),
             })
             .mockResolvedValueOnce({ done: true, value: undefined }),
         }),
@@ -189,7 +189,7 @@ describe('ragQuery', () => {
           read: vi.fn()
             .mockResolvedValueOnce({
               done: false,
-              value: new TextEncoder().encode(JSON.stringify({ response: 'Answer', done: true }) + '\n'),
+              value: new TextEncoder().encode('data: ' + JSON.stringify({ token: 'Answer' }) + '\n\ndata: [DONE]\n\n'),
             })
             .mockResolvedValueOnce({ done: true, value: undefined }),
         }),

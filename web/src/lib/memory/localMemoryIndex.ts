@@ -1,6 +1,5 @@
 import { getDb } from '$lib/server/database';
 import { chunkText, cosineSimilarity } from '$lib/vector/vectorStore';
-import { embedBatch, embedText } from '$lib/vector/serverEmbeddings';
 import type { NoteRecord } from '../../types/note';
 
 export interface MemoryIndexMatch {
@@ -26,7 +25,7 @@ interface MemoryChunkRow {
 
 export type EmbedTexts = (texts: string[]) => Promise<number[][]>;
 
-const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text';
+const DEFAULT_EMBEDDING_MODEL = 'explicit-embedding-provider';
 
 export function memoryContentHash(note: Pick<NoteRecord, 'title' | 'content'>): string {
   const input = `${note.title}\n\n${note.content}`;
@@ -60,16 +59,15 @@ function ensureMemorySchema(): void {
   `);
 }
 
-async function defaultEmbedTexts(texts: string[]): Promise<number[][]> {
-  return embedBatch(texts);
-}
-
 export async function indexNoteMemory(input: {
   userId: string;
   note: NoteRecord;
   embedTexts?: EmbedTexts;
   embeddingModel?: string;
 }): Promise<{ indexedChunks: number; skipped: boolean }> {
+  // Neural indexing is disabled. Preserve historical rows unless an explicit
+  // embedding implementation is supplied (used by existing isolated tests).
+  if (!input.embedTexts) return { indexedChunks: 0, skipped: true };
   ensureMemorySchema();
   const db = getDb();
   const contentHash = memoryContentHash(input.note);
@@ -81,7 +79,7 @@ export async function indexNoteMemory(input: {
   }
 
   const chunks = chunkText(`${input.note.title}\n\n${input.note.content}`);
-  const vectors = chunks.length > 0 ? await (input.embedTexts ?? defaultEmbedTexts)(chunks) : [];
+  const vectors = chunks.length > 0 ? await input.embedTexts(chunks) : [];
   const now = Date.now();
   const embeddingModel = input.embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
 
@@ -131,6 +129,7 @@ export async function searchLocalMemory(input: {
   topK?: number;
   embedTexts?: EmbedTexts;
 }): Promise<MemoryIndexMatch[]> {
+  if (!input.embedTexts) return [];
   ensureMemorySchema();
   const topK = input.topK ?? 5;
   const rows = getDb()
@@ -138,7 +137,7 @@ export async function searchLocalMemory(input: {
     .all(input.userId) as MemoryChunkRow[];
   if (rows.length === 0) return [];
 
-  const [queryVector] = input.embedTexts ? await input.embedTexts([input.query]) : [await embedText(input.query)];
+  const [queryVector] = await input.embedTexts([input.query]);
   const bestByNote = new Map<string, MemoryIndexMatch>();
 
   for (const row of rows) {

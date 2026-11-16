@@ -27,7 +27,7 @@ describe('queryOllamaJSON', () => {
 
     expect(result).toEqual({ answer: 42, items: ['a', 'b'] });
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/api/ollama/json',
+      '/api/llm/json',
       expect.objectContaining({
         method: 'POST',
         body: expect.stringContaining('"prompt"'),
@@ -62,7 +62,7 @@ describe('queryOllamaJSON', () => {
     expect(result).toBeNull();
   });
 
-  it('sends ollamaUrl and ollamaModel in the request body', async () => {
+  it('ignores obsolete browser backend settings', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({ result: {} }),
@@ -72,8 +72,8 @@ describe('queryOllamaJSON', () => {
 
     const [, fetchOptions] = (globalThis.fetch as any).mock.calls[0];
     const body = JSON.parse(fetchOptions.body);
-    expect(body.ollamaUrl).toBe('http://localhost:11434');
-    expect(body.ollamaModel).toBe('llama3.2:3b');
+    expect(body.ollamaUrl).toBeUndefined();
+    expect(body.ollamaModel).toBeUndefined();
     expect(body.prompt).toBe('test');
   });
 

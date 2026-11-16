@@ -56,7 +56,9 @@
 			|| normalized === 'Searching your notes and graph...'
 			|| normalized.startsWith('Still waiting for the chat stream to start')
 			|| normalized === 'I found relevant notes. Asking Ollama to reason over them…'
-			|| normalized === 'I found relevant notes. Asking Ollama to reason over them...';
+			|| normalized === 'I found relevant notes. Asking Ollama to reason over them...'
+			|| normalized === 'I found relevant notes. Asking Laguna XS 2.1 to reason over them…'
+			|| normalized === 'I found relevant notes. Asking Laguna XS 2.1 to reason over them...';
 	}
 
 	async function deleteTransientChatPlaceholders(records: ChatMessageRecord[]) {
@@ -225,7 +227,7 @@
 			const assistant = getAssistantMessage();
 			if (assistant && isTransientAssistantText(assistant.text)) {
 				updateAssistantMessage((message) => {
-					message.text = 'Still waiting for the chat stream to start. If this stays here, Ollama or the dev server is not returning data.';
+					message.text = 'Still waiting for the chat stream to start. If this stays here, llama.cpp or the hub server is not returning data.';
 				});
 				abortController?.abort(new Error('Chat stream did not start within 12 seconds'));
 			}
@@ -241,8 +243,6 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					query,
-					model: config.model,
-					ollamaUrl: config.ollamaUrl,
 					includeExperimentalWiki,
 					stream: true,
 				}),
@@ -285,7 +285,7 @@
 							assistantMsg.text += token;
 						}
 					} else if (event.type === 'error') {
-						assistantMsg.text += event.message ?? 'Error querying Ollama';
+						assistantMsg.text += event.message ?? 'Error querying llama.cpp';
 					}
 				});
 				scrollToBottom();
@@ -306,7 +306,7 @@
 			if (!(err instanceof DOMException && err.name === 'AbortError')) {
 				let msg = err instanceof Error ? err.message : 'Failed to query notes';
 				if (msg.includes('stalled') || msg.includes('TimeoutError') || msg.includes('timed out')) {
-					msg = 'Response timed out. Ollama may be overloaded or the model is too slow for this query.';
+					msg = 'Response timed out. Laguna may be busy serving another request. Check the llama.cpp fleet status.';
 				}
 				const visibleMsg = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
 				error = visibleMsg;
@@ -322,7 +322,7 @@
 			const assistant = getAssistantMessage();
 			if (assistant && isTransientAssistantText(assistant.text)) {
 				updateAssistantMessage((message) => {
-					message.text = 'The chat request ended before the server returned any answer. Check Ollama/server logs and try again.';
+					message.text = 'The chat request ended before the server returned any answer. Check llama.cpp/hub logs and try again.';
 				});
 			}
 			abortController = null;

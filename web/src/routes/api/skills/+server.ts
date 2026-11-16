@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { getDataDir } from '$lib/server/dataDir';
 import { readFolders, readNotes } from '$lib/server/notesFile';
 import { buildGraphSnapshot, selectGraphSubsetForNotes } from '$lib/server/graphSnapshot';
-import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
-import { generateSkill } from '$lib/skills/skillGenerator';
+import { queryLlamaCpp } from '$lib/server/llamaCpp';
+import { buildSkillPrompt } from '$lib/skills/skillGenerator';
 
 const SKILLS_FILE = join(getDataDir(), 'skills.json');
 
@@ -65,27 +65,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     content: note.content,
   }));
 
-  let ollamaUrl: string;
   try {
-    ollamaUrl = resolveOllamaBaseUrl(body.ollamaUrl);
-  } catch (err) {
-    throw error(400, err instanceof Error ? err.message : 'Invalid Ollama URL');
-  }
-
-  const config = {
-    ollamaUrl,
-    model: body.model || 'qwen2.5:3b',
-    topK: 5,
-  };
-
-  try {
-    const skillContent = await generateSkill(
-      cluster,
-      noteContext,
-      subset.entities,
-      subset.relations,
-      config
-    );
+    const prompt = buildSkillPrompt(cluster, noteContext, subset.entities, subset.relations);
+    let skillContent = '';
+    for await (const token of queryLlamaCpp(prompt, undefined, request.signal)) skillContent += token;
 
     return json({ skill: skillContent });
   } catch (err) {

@@ -2,23 +2,22 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/database';
 import { getDataDir } from '$lib/server/dataDir';
-import { resolveOllamaBaseUrl } from '$lib/server/ollamaUrl';
+import { DEFAULT_LLAMACPP_BASE_URL, DEFAULT_LLAMACPP_MODEL } from '$lib/server/llamaCpp';
 import { readGraphRelationReviews } from '$lib/server/graphRelationReviews';
-import { queryOllama } from '$lib/vector/ragPipeline';
+import { queryLlamaCpp as queryOllama } from '$lib/server/llamaCpp';
 import { readFolders, readNotes } from '$lib/server/notesFile';
 import { buildNoteMemoryContext, type VectorMatch } from '$lib/memory/noteMemoryPipeline';
 import { synthesizeAnswerFromMemory } from '$lib/memory/answerSynthesizer';
-import { ensureUserMemoryIndex, searchLocalMemory } from '$lib/memory/localMemoryIndex';
 import { buildWikiFirstQueryContext } from '$lib/wiki/query/queryPipeline';
 import type { GraphRelationReviewMap } from '$lib/graph/relationReviewKey';
 import type { FolderRecord, NoteRecord } from '../../../types/note';
 
 const DEFAULT_TOP_K = 5;
-const DEFAULT_MODEL = 'qwen2.5:3b';
+const DEFAULT_MODEL = DEFAULT_LLAMACPP_MODEL;
 const DEFAULT_USER_ID = 'user-1';
 const INSUFFICIENT_EVIDENCE_RESPONSE = 'I do not have enough evidence in your notes or graph to answer that directly.';
 const SEARCHING_MEMORY_STATUS = 'Searching your notes and graph…\n\n';
-const OLLAMA_REASONING_STATUS = 'I found relevant notes. Asking Ollama to reason over them…\n\n';
+const OLLAMA_REASONING_STATUS = 'I found relevant notes. Asking Laguna XS 2.1 to reason over them…\n\n';
 
 function sanitizeCitationsForClient(citations: unknown[]): unknown[] {
   return citations.map((citation) => {
@@ -86,6 +85,8 @@ function streamNoteGraphResponse(input: {
   model?: string;
   signal?: AbortSignal;
 }): Response {
+  const abort = new AbortController();
+  const signal = input.signal ? AbortSignal.any([input.signal, abort.signal]) : abort.signal;
   const encoder = new TextEncoder();
   return new Response(
     new ReadableStream({
@@ -110,21 +111,8 @@ function streamNoteGraphResponse(input: {
 
         void (async () => {
           try {
-            let vectorMatches: VectorMatch[] = [];
-            try {
-              let semantic = await searchLocalMemory({ userId: input.userId, query: input.query, topK: DEFAULT_TOP_K });
-              if (semantic.length === 0 && input.userNotes.length > 0) {
-                await ensureUserMemoryIndex({ userId: input.userId, notes: input.userNotes });
-                semantic = await searchLocalMemory({ userId: input.userId, query: input.query, topK: DEFAULT_TOP_K });
-              }
-              vectorMatches = semantic.map((result) => ({
-                noteId: result.noteId,
-                chunkText: result.chunkText,
-                score: result.score,
-              }));
-            } catch (err) {
-              console.warn('[Query] Local memory index unavailable; continuing with full-text + graph memory.', err);
-            }
+            // Keyword + graph retrieval only; no embedding model is called.
+            const vectorMatches: VectorMatch[] = [];
 
             const queryContext = buildNoteMemoryContext({
               notes: input.userNotes,
@@ -161,24 +149,24 @@ function streamNoteGraphResponse(input: {
             send({ type: 'token', token: OLLAMA_REASONING_STATUS });
             const config = { ollamaUrl: input.resolvedOllamaUrl, model: input.model || DEFAULT_MODEL, topK: DEFAULT_TOP_K };
             let tokenCount = 0;
-            for await (const token of queryOllama(queryContext.messages, config, input.signal)) {
+            for await (const token of queryOllama(queryContext.messages, config, signal)) {
               tokenCount += token.length;
               send({ type: 'token', token });
             }
             if (tokenCount === 0) {
-              send({ type: 'error', message: 'Ollama returned an empty response. Check the selected model and Ollama server logs.' });
+              send({ type: 'error', message: 'Laguna returned an empty response. Check the llama.cpp fleet status.' });
               return;
             }
             send({ type: 'done' });
           } catch (err) {
             const message = err instanceof Error ? err.message : 'Unknown error';
-            send({ type: 'error', message: `Error querying Ollama: ${message}` });
+            send({ type: 'error', message: `Error querying llama.cpp: ${message}` });
           } finally {
             close();
           }
         })();
       },
-      cancel() {},
+      cancel() { abort.abort(); },
     }),
     { headers: { 'Content-Type': 'application/x-ndjson' } }
   );
@@ -198,12 +186,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     throw error(400, 'Missing or invalid query parameter');
   }
 
-  let resolvedOllamaUrl: string;
-  try {
-    resolvedOllamaUrl = resolveOllamaBaseUrl(ollamaUrl);
-  } catch (err) {
-    throw error(400, err instanceof Error ? err.message : 'Invalid Ollama URL');
-  }
+  // Ignore legacy browser settings: the hub owns backend selection.
+  const resolvedOllamaUrl = DEFAULT_LLAMACPP_BASE_URL;
 
   const userId = locals.user?.id ?? DEFAULT_USER_ID;
   const userNotes = readNotes(userId);
@@ -246,23 +230,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     }
   }
 
-  let vectorMatches: VectorMatch[] = [];
-  if (!includeExperimentalWiki) {
-    try {
-      let semantic = await searchLocalMemory({ userId, query, topK: DEFAULT_TOP_K });
-      if (semantic.length === 0 && userNotes.length > 0) {
-        await ensureUserMemoryIndex({ userId, notes: userNotes });
-        semantic = await searchLocalMemory({ userId, query, topK: DEFAULT_TOP_K });
-      }
-      vectorMatches = semantic.map((result) => ({
-        noteId: result.noteId,
-        chunkText: result.chunkText,
-        score: result.score,
-      }));
-    } catch (err) {
-      console.warn('[Query] Local memory index unavailable; continuing with full-text + graph memory.', err);
-    }
-  }
+  const vectorMatches: VectorMatch[] = [];
 
   const queryContext = includeExperimentalWiki
     ? buildWikiFirstQueryContext({
@@ -303,6 +271,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   const config = { ollamaUrl: resolvedOllamaUrl, model: model || DEFAULT_MODEL, topK: DEFAULT_TOP_K };
 
   if (body.stream === true) {
+    const abort = new AbortController();
+    const signal = AbortSignal.any([request.signal, abort.signal]);
     const encoder = new TextEncoder();
     return new Response(
       new ReadableStream({
@@ -346,19 +316,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
                   return;
                 }
               }
-              for await (const token of queryOllama(queryContext.messages, config, request.signal)) {
+              for await (const token of queryOllama(queryContext.messages, config, signal)) {
                 send({ type: 'token', token });
               }
               send({ type: 'done' });
             } catch (err) {
               const message = err instanceof Error ? err.message : 'Unknown error';
-              send({ type: 'error', message: `Error querying Ollama: ${message}` });
+              send({ type: 'error', message: `Error querying llama.cpp: ${message}` });
             } finally {
               close();
             }
           })();
         },
-        cancel() {},
+        cancel() { abort.abort(); },
       }),
       { headers: { 'Content-Type': 'application/x-ndjson' } }
     );
@@ -366,11 +336,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
   try {
     let fullResponse = '';
-    for await (const token of queryOllama(queryContext.messages, config)) {
+    for await (const token of queryOllama(queryContext.messages, config, request.signal)) {
       fullResponse += token;
     }
     if (!fullResponse.trim()) {
-      fullResponse = 'Ollama returned an empty response. Check the selected model and Ollama server logs.';
+      fullResponse = 'Laguna returned an empty response. Check the llama.cpp fleet status.';
     }
 
     const clientCitations = sanitizeCitationsForClient(queryContext.citations);
@@ -387,7 +357,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     const message = err instanceof Error ? err.message : 'Unknown error';
     const clientCitations = sanitizeCitationsForClient(queryContext.citations);
     return json({
-      response: `Error querying Ollama: ${message}`,
+      response: `Error querying llama.cpp: ${message}`,
       sources: clientCitations,
       citations: clientCitations,
       coverage: queryContext.coverage,

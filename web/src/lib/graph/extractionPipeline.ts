@@ -28,13 +28,14 @@ export interface PipelineResult {
 
 const DEFAULT_CONFIG: PipelineConfig = {
   enableRegex: true,
-  enableNER: true,
+  // Keep default graph extraction deterministic; no auxiliary neural backend.
+  enableNER: false,
 };
 
 /**
  * Run the multi-stage extraction pipeline on a note.
  * Stage 1 (regex): always runs on every save
- * Stage 2 (NER): always runs on every save
+ * Stage 2 (NER): disabled by default; only runs when explicitly requested
  * Stages 3-4 (LLM refinement) are handled separately by the self-improver.
  */
 export async function runExtractionPipeline(

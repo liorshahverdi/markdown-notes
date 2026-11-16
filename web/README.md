@@ -1,6 +1,6 @@
 # MarkdownNotes Web
 
-MarkdownNotes Web is a local-first markdown notes app with a graph-powered memory layer and optional local-model assistance through Ollama.
+MarkdownNotes Web is a local-first markdown notes app with a graph-powered memory layer and local-model assistance through llama.cpp with Laguna XS 2.1.
 
 The current product center is no longer a wiki-first ingestion console. The default workflow is:
 
@@ -12,7 +12,7 @@ The current product center is no longer a wiki-first ingestion console. The defa
 6. Review graph edges when needed; rejected edges are excluded from normal graph/chat retrieval.
 7. Generate skills from meaningful graph context.
 
-Built with SvelteKit, Svelte 5, TypeScript, SQLite, markdown vault files, CodeMirror, Mermaid, and Ollama.
+Built with SvelteKit, Svelte 5, TypeScript, SQLite, markdown vault files, CodeMirror, Mermaid, and llama.cpp.
 
 ---
 
@@ -55,11 +55,11 @@ Default chat uses notes + graph memory, not generated wiki pages.
 
 - reads the authenticated user's notes
 - performs fast lexical/title matching
-- uses persisted server-side memory chunks/embeddings when available
+- uses keyword/title matches and graph evidence without embedding inference
 - expands context with graph evidence, excluding edges the user rejected
 - streams an NDJSON response immediately so the UI does not appear hung
-- synthesizes simple high-confidence answers without waiting for Ollama when safe
-- otherwise routes to Ollama through loopback-only server-side requests
+- synthesizes simple high-confidence answers without waiting for a model when safe
+- otherwise routes to Laguna XS 2.1 through authenticated loopback-only llama.cpp requests
 - presents graph links as supporting context, not as answers
 
 The chat UI streams tokens into a single assistant message, displays memory coverage such as `Memory evidence: 1 note · 3 graph edges`, and has an opt-in checkbox for experimental wiki context.
@@ -80,10 +80,9 @@ The previous LLM-maintained local wiki remains available under `/experimental/wi
 | GET | `/api/graph` | Graph data built from notes; excludes rejected edges by default; pass `includeRejected=1` for diagnostics |
 | POST | `/api/graph/reviews` | Persist graph edge accept/reject review state |
 | POST | `/api/skills` | Skill generation/export workflows |
-| GET | `/api/ollama/health` | Loopback Ollama health proxy |
-| POST | `/api/ollama/chat` | Loopback Ollama chat proxy |
-| POST | `/api/ollama/embed` | Loopback Ollama embeddings proxy |
-| POST | `/api/ollama/json` | Loopback Ollama JSON helper |
+| GET | `/api/llm/health` | Authenticated configured-model availability check |
+| POST | `/api/llm/chat` | Streaming llama.cpp chat proxy |
+| POST | `/api/llm/json` | Structured llama.cpp JSON helper |
 | GET/POST | `/api/sources` | Experimental raw-source listing/import |
 | POST | `/api/sources/import` | Experimental source-to-wiki ingest |
 | GET | `/api/wiki/index` | Experimental generated wiki index |
@@ -100,12 +99,12 @@ The previous LLM-maintained local wiki remains available under `/experimental/wi
 | --- | --- |
 | Framework | SvelteKit + TypeScript |
 | UI | Svelte 5 + Tailwind CSS |
-| Local LLM | Ollama over loopback server proxies |
+| Local LLM | Laguna XS 2.1 via server-only authenticated llama.cpp |
 | Persistence | SQLite + managed markdown vault |
 | Editor | CodeMirror 6 |
 | Diagrams | Mermaid |
 | Graph | deterministic extraction + provenance helpers |
-| Vector memory | Ollama embeddings with Xenova fallback paths |
+| Retrieval | Keywords + graph; historical vectors preserved, inference disabled |
 | Testing | Vitest + jsdom + @testing-library/svelte; ad hoc Playwright QA |
 
 ---
@@ -129,13 +128,17 @@ notes-cli login --url http://localhost:5173 --username <user>
 
 CLI requests then use `Authorization: Bearer mnpat_...`; browser requests continue to use session cookies. Non-interactive CLI commands support `--json` for scripts, for example `notes-cli list --json` or `notes-cli ask "What changed?" --json`.
 
-Optional local models:
+Configure the app server to use an already-running Laguna XS llama.cpp instance:
 
 ```bash
-ollama pull qwen2.5:3b
-ollama pull nomic-embed-text
-ollama serve
+export LLAMACPP_BASE_URL=http://127.0.0.1:8089/v1
+export LLAMACPP_MODEL=laguna-xs-2.1-q4_k_m
+export LLAMACPP_API_KEY='<private backend key>'
 ```
+
+The base URL must target a loopback host; legacy browser URL/model settings are ignored. No Ollama backend or fallback is used. Historical `/api/ollama/{health,chat,json}` routes are compatibility aliases to the same llama.cpp implementation; `/api/ollama/embed` returns 410. Historical exported helper names are also compatibility aliases, not a second provider.
+
+The hub does not manage fleet lifecycle. If Laguna is stopped or another model is active, generation is unavailable; keyword/graph recall remains usable. Laguna's shared single inference slot can cause queueing with other clients. Per-request thinking is off and prompt caching is disabled; fleet defaults are not modified.
 
 The app runs at `http://localhost:5173` by default.
 
@@ -182,7 +185,7 @@ src/
     ├── graph/            # graph page entry
     ├── maintenance/      # maintenance/experimental admin surfaces
     ├── skills/           # skill views
-    └── api/              # notes/query/graph/ollama/source/wiki endpoints
+    └── api/              # notes/query/graph/llm/source/wiki endpoints
 ```
 
 ---

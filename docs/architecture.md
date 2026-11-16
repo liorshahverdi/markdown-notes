@@ -13,7 +13,7 @@ The current product model is note-first:
 3. Entity, relation, folder, link, and Mermaid information produce a knowledge graph.
 4. Chat retrieves notes + graph memory by default.
 5. Persisted graph review decisions are applied before graph evidence reaches chat or the normal graph API.
-6. Ollama is called only when deterministic memory recall is insufficient.
+6. Laguna XS 2.1 through llama.cpp is called when deterministic memory recall is insufficient. No Ollama backend or fallback is used.
 7. Generated wiki/source ingestion remains available as an explicit experimental subsystem.
 
 ## Core layers
@@ -23,7 +23,8 @@ The current product model is note-first:
 - `web/src/lib/server` — auth, database, vault, note file, graph snapshot, and server-only helpers.
 - `web/src/lib/stores` — Svelte stores for notes, folders, graph, chat state, and local model config.
 - `web/src/lib/memory` — note/graph memory context building, local memory index, synthesized recall.
-- `web/src/lib/vector` — RAG prompt assembly, Ollama streaming parser, embeddings, vector/reranker helpers.
+- `web/src/lib/vector` — RAG prompt assembly and deterministic keyword search; historical vector helpers remain but embedding inference is disabled.
+- `web/src/lib/server/llamaCpp.ts` — private backend configuration/authentication, OpenAI SSE parsing, structured completion, model health and cancellation.
 - `web/src/lib/graph` — entity extraction, relationship inference, graph scoring, provenance, edge review helpers.
 - `web/src/lib/wiki` — experimental source/wiki ingestion, wiki-first query, linting, answer filing, migration.
 - `web/src/lib/skills` — graph-derived skill generation and export.
@@ -52,12 +53,12 @@ For notes+graph chat it:
 1. loads notes/folders for the authenticated user
 2. opens an NDJSON stream immediately for interactive requests
 3. loads persisted graph relation reviews for the user
-4. performs lexical/title retrieval and persisted memory-index search
+4. performs lexical/title retrieval (no neural embedding/index search)
 5. expands graph context while excluding rejected edges
 6. builds note citations and graph citations
 7. returns synthesized high-confidence answers directly where safe
-8. otherwise builds an Ollama chat prompt with note text first and graph links as supporting context
-9. streams Ollama tokens back to the UI
+8. otherwise builds a Laguna chat prompt with note text first and graph links as supporting context
+9. streams llama.cpp answer-content tokens back to the UI; reasoning content is not displayed
 
 The prompt explicitly prevents raw graph-edge syntax from being used as an answer. Graph links are supporting context; note text is the evidence source for factual answers.
 
@@ -77,9 +78,15 @@ The source/wiki subsystem is still present but opt-in. It can import raw sources
 
 Browser users authenticate with local session cookies. CLI, automation, and future MCP adapters can use scoped local API tokens via `Authorization: Bearer mnpat_...`. Token records are stored hashed in SQLite, full tokens are shown only at creation time, and `/api/tokens` management requires a browser session.
 
-## Ollama integration
+## llama.cpp integration
 
-Server-side Ollama requests are restricted to loopback hosts by `web/src/lib/server/ollamaUrl.ts`. The UI checks Ollama health through server proxies and query/chat requests are streamed to prevent long silent waits.
+`web/src/lib/server/llamaCpp.ts` is the server-only backend boundary. LLAMACPP_BASE_URL defaults to `http://127.0.0.1:8089/v1`, LLAMACPP_MODEL defaults to `laguna-xs-2.1-q4_k_m`, and LLAMACPP_API_KEY is required. Only HTTP(S) loopback URLs without URL credentials are permitted. Browser-provided backend addresses/models are ignored. The API key is never returned to clients.
+
+The `/api/llm/health`, `/api/llm/chat` and `/api/llm/json` routes remain behind app authentication and query scopes. The health check verifies the configured model in the authenticated model list. Chat parses OpenAI SSE across split chunks, propagates cancellation, bounds connection/stream waits and cleans up upstream readers. Structured extraction and background summaries use nonstreaming chat completions. Generation requests disable thinking and prompt caching without changing fleet defaults.
+
+The app does not activate or evict fleet models. A stopped/shared-busy Laguna is reported as unavailable or timed out, never replaced with Ollama. Historical `/api/ollama/{health,chat,json}` URLs and exported helper names are compatibility aliases only; the old embed endpoint returns 410.
+
+Retrieval uses keywords and graph evidence; neither Ollama nor Transformers embeddings are loaded. Historical SQLite/IndexedDB vectors are left intact but unused. Default graph extraction is deterministic (NER off); graph refinement uses the same llama.cpp proxy.
 
 ## CLI
 

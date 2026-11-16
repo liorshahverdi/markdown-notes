@@ -1,6 +1,6 @@
 # Markdown Notes
 
-Markdown Notes is a local-first markdown notes workspace with graph-powered memory and optional local-model assistance through Ollama.
+Markdown Notes is a local-first markdown notes workspace with graph-powered memory and local-model assistance through llama.cpp (Laguna XS 2.1).
 
 This repository contains two related applications:
 
@@ -29,7 +29,8 @@ The active web app has pivoted back to a note-first product model:
 - user-authored markdown notes are the source of truth
 - the knowledge graph is built from notes, entities, links, folders, and Mermaid diagrams
 - chat defaults to notes + graph memory
-- Ollama is used only when deterministic memory recall is insufficient
+- Laguna XS 2.1 via llama.cpp is used when deterministic memory recall is insufficient
+- retrieval uses keywords and graph evidence; neural embedding inference is disabled
 - generated wiki/source ingestion remains available as an explicit experimental subsystem, not a normal note-save side effect
 - graph review decisions are persisted and rejected edges are excluded from normal graph/chat retrieval
 - local API tokens support CLI automation and future MCP adapters
@@ -66,13 +67,15 @@ curl -i http://127.0.0.1:5173/api/notes
 
 The compose service stores app data in the named volume `markdown-notes-data`, exposes port `5173`, and sets `MARKDOWN_NOTES_DATA_DIR=/data` inside the container. A `401 Unauthorized` response from `/api/notes` is a healthy unauthenticated API smoke test; create/login to a browser session and mint a read-only API token for automation.
 
-Optional local model setup:
+Local model configuration belongs to the app server:
 
 ```bash
-ollama serve
-ollama pull llama3.2:3b
-ollama pull nomic-embed-text
+export LLAMACPP_BASE_URL=http://127.0.0.1:8089/v1
+export LLAMACPP_MODEL=laguna-xs-2.1-q4_k_m
+export LLAMACPP_API_KEY='<private backend key>'
 ```
+
+Use an already-running authenticated llama.cpp Laguna XS instance. The app never activates, switches or stops shared fleet models. No Ollama service or embedding model is needed. Remote clients use the app URL; backend credentials remain server-only. For Docker, loopback refers to the container: configure a reviewed local network arrangement before attempting host inference (or run the app as a native Node service).
 
 ### CLI
 

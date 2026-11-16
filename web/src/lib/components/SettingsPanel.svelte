@@ -22,9 +22,7 @@
 	let theme = $state<'system' | 'light' | 'dark'>('system');
 
 	// RAG settings
-	let ollamaUrl = $state('http://localhost:11434');
-	let ollamaModel = $state('qwen2.5:3b');
-	let embeddingModel = $state('nomic-embed-text');
+	const backendModel = 'laguna-xs-2.1-q4_k_m';
 	let topK = $state(5);
 	let ollamaSettingsStatus = $state<'disconnected' | 'checking' | 'connected'>('disconnected');
 
@@ -58,9 +56,6 @@
 
 		// Load RAG config from store
 		const rc = get(ragConfig);
-		ollamaUrl = rc.ollamaUrl;
-		ollamaModel = rc.model;
-		embeddingModel = rc.embeddingModel || 'nomic-embed-text';
 		topK = rc.topK;
 
 		// Check Ollama health on load
@@ -75,7 +70,7 @@
 		ollamaSettingsStatus = 'checking';
 		const gen = ++healthCheckGeneration;
 		healthCheckTimer = setTimeout(async () => {
-			const ok = await proxyCheckHealth(ollamaUrl);
+			const ok = await proxyCheckHealth();
 			if (gen === healthCheckGeneration) {
 				ollamaSettingsStatus = ok ? 'connected' : 'disconnected';
 			}
@@ -93,7 +88,7 @@
 		localStorage.setItem('app-settings', JSON.stringify(settings));
 
 		// Update RAG config store
-		ragConfig.set({ ollamaUrl, model: ollamaModel, topK, embeddingModel });
+		ragConfig.set({ ollamaUrl: '', model: backendModel, topK, embeddingModel: '' });
 
 		applyTheme();
 		applyFontSize();
@@ -259,46 +254,11 @@
 					<VoiceSettings />
 				{:else if activeTab === 'rag'}
 					<div class="space-y-6">
-						<div>
-							<label for="ollama-url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								Ollama URL
-							</label>
-							<input
-								id="ollama-url"
-								type="text"
-								bind:value={ollamaUrl}
-								onchange={saveRagSettings}
-								class="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-								placeholder="http://localhost:11434"
-							/>
-						</div>
-
-						<div>
-							<label for="ollama-model" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								Model
-							</label>
-							<input
-								id="ollama-model"
-								type="text"
-								bind:value={ollamaModel}
-								onchange={saveRagSettings}
-								class="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-								placeholder="qwen2.5:3b"
-							/>
-						</div>
-
-						<div>
-							<label for="embedding-model" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								Embedding Model
-							</label>
-							<input
-								id="embedding-model"
-								type="text"
-								bind:value={embeddingModel}
-								onchange={saveRagSettings}
-								class="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-								placeholder="nomic-embed-text"
-							/>
+						<div class="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+							<p><strong>Backend:</strong> llama.cpp on the hub</p>
+							<p><strong>Model:</strong> Laguna XS 2.1</p>
+							<p>Backend address, model and credentials are configured on the server, not this device.</p>
+							<p><strong>Retrieval:</strong> keywords and knowledge graph. Embedding inference is disabled.</p>
 						</div>
 
 						<div>
@@ -321,7 +281,7 @@
 						</div>
 
 						<div class="flex items-center gap-2">
-							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Ollama status:</span>
+							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Laguna / llama.cpp status:</span>
 							<span class="inline-block h-3 w-3 rounded-full {statusColor}"></span>
 							<span class="text-sm text-gray-500 dark:text-gray-400 capitalize">{ollamaSettingsStatus}</span>
 						</div>

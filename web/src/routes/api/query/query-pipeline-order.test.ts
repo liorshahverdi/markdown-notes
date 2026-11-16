@@ -8,17 +8,15 @@ describe('/api/query notes+graph pipeline order', () => {
 
     const streamingStart = source.indexOf('return streamNoteGraphResponse');
     const firstSynth = source.indexOf('synthesizeAnswerFromMemory({ query, citations: quickContext.citations })');
-    const indexSearch = source.indexOf('searchLocalMemory', streamingStart);
-    const modelFallback = source.indexOf('queryOllama(queryContext.messages, config', indexSearch);
+    const modelFallback = source.indexOf('queryOllama(queryContext.messages, config', firstSynth);
 
     expect(firstSynth).toBeGreaterThan(-1);
     expect(streamingStart).toBeGreaterThan(-1);
-    expect(indexSearch).toBeGreaterThan(-1);
+    expect(source).not.toContain('searchLocalMemory');
     expect(modelFallback).toBeGreaterThan(-1);
     expect(source).not.toContain('checkOllamaHealth');
     expect(streamingStart).toBeLessThan(firstSynth);
-    expect(streamingStart).toBeLessThan(indexSearch);
-    expect(indexSearch).toBeLessThan(modelFallback);
+    expect(firstSynth).toBeLessThan(modelFallback);
     expect(source).toContain('Searching your notes and graph');
     expect(source).toContain('I do not have enough evidence in your notes or graph to answer that directly.');
   });

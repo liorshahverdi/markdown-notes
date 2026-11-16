@@ -531,27 +531,8 @@
       </button>
       {#if aiSettingsOpen}
         <div class="kg-fieldset">
-          <label class="kg-field">
-            <span class="label-meta">Ollama URL</span>
-            <input
-              type="text"
-              value={$ragConfig.ollamaUrl}
-              oninput={(e) => $ragConfig = { ...$ragConfig, ollamaUrl: e.currentTarget.value }}
-              placeholder="http://localhost:11434"
-              class="kg-input"
-            />
-          </label>
-          <label class="kg-field">
-            <span class="label-meta">Ollama Model</span>
-            <input
-              type="text"
-              value={$ragConfig.model}
-              oninput={(e) => $ragConfig = { ...$ragConfig, model: e.currentTarget.value }}
-              placeholder="qwen2.5:3b"
-              class="kg-input"
-            />
-          </label>
-          <p class="kg-help-note">Used for implicit extraction &amp; entity validation during self-improvement.</p>
+          <p class="label-meta">Laguna XS 2.1 · llama.cpp</p>
+          <p class="kg-help-note">Configured on the hub. Used for implicit extraction, entity validation and skill generation. Retrieval uses keywords and graph evidence; no embedding model is called.</p>
         </div>
       {/if}
     </section>
@@ -932,32 +913,6 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-  }
-
-  .kg-field {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
-
-  .kg-input {
-    padding: 7px 10px;
-    font-size: 12.5px;
-    color: var(--color-text);
-    background: var(--color-surface-raised);
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 6px;
-    transition: border-color 120ms ease, box-shadow 120ms ease;
-  }
-
-  :global(.dark) .kg-input {
-    background: var(--color-surface);
-  }
-
-  .kg-input:focus {
-    outline: none;
-    border-color: var(--brand-500);
-    box-shadow: 0 0 0 3px var(--brand-tint);
   }
 
   .kg-main {
