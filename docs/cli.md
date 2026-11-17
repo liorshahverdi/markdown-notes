@@ -42,6 +42,41 @@ notes-cli logout
 
 The config file is written with user-only permissions (`0600`). Treat it as a local secret and do not commit or paste it into issues/logs.
 
+## Importing existing markdown
+
+```bash
+notes-cli import ~/notes                      # every .md/.markdown under a directory
+notes-cli import ~/notes --dry-run            # list what would be imported, write nothing
+notes-cli import CHANGELOG.md --split         # one note per top-level "##" section
+notes-cli import ~/notes --prefix "archive/"  # prepend a prefix to every title
+```
+
+Import requires a token with the `notes:write` scope. `notes-cli login` requests read-only
+scopes by default, so create a write-capable token explicitly:
+
+```bash
+notes-cli login --scopes notes:read,notes:write,query:read,graph:read,skills:read
+```
+
+Notes are written one at a time through the single-note API path rather than the bulk path,
+because only the single-note path triggers summary generation and the local memory index —
+bulk-written notes are invisible to graph and chat retrieval until they are touched again.
+
+Each note is given a stable id derived from its source path and title, so re-running an import
+updates the existing notes instead of creating duplicates.
+
+`--max-words` (default 1500) further splits any note that is still too long after
+heading-splitting, cutting on paragraph boundaries and suffixing the parts `(1/3)`,
+`(2/3)` and so on. This matters for documents that mark their sections with bold text
+rather than `##`, where heading-splitting finds nothing to cut — one such file imported
+as a single 27,691-word note. Set `--max-words 0` to disable.
+
+`--split` is worth using on long documents. A single very large note is a poor retrieval unit:
+chunking is coarse and the whole document tends to come back as the answer to everything.
+Splitting on `##` headings gives the index units that are about one thing. Headings inside
+fenced code blocks are ignored, and any content before the first heading is kept as its own note
+so nothing is dropped.
+
 ## Common commands
 
 ```bash

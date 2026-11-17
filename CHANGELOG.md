@@ -12,6 +12,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Repository scope now includes both the SvelteKit web app and native Swift/macOS app.
 - Persisted graph edge review state so rejected edges are excluded from normal graph and chat retrieval.
 - Local API token support for CLI, automation, and future MCP adapters, including scoped bearer-token auth and `/api/tokens` management.
+- `notes-cli import` for bulk-importing markdown files or directories into notes, with `--split` to make one note per top-level section, `--max-words` to cap oversized notes, `--dry-run`, `--prefix`, and stable ids so re-imports update rather than duplicate.
 
 ### Changed
 
